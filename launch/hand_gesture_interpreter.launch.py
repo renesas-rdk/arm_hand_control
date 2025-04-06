@@ -1,0 +1,37 @@
+import os
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+
+def generate_launch_description():
+    # Get the package directory
+    pkg_dir = get_package_share_directory('arm_hand_control')
+
+    # Default config file path (relative to package)
+    default_config = os.path.join('config', 'hand_config.yaml')
+
+    # Declare the config file path as a launch argument
+    config_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value=default_config,
+        description='Path to config file for hand parameters'
+    )
+
+    # Create the node
+    hand_gesture_interpreter_node = Node(
+        package='arm_hand_control',
+        executable='hand_gesture_interpreter',
+        name='hand_gesture_interpreter',
+        output='screen',
+        parameters=[
+            {'config_file': LaunchConfiguration('config_file')}
+        ]
+    )
+
+    # Return the launch description
+    return LaunchDescription([
+        config_arg,
+        hand_gesture_interpreter_node
+    ])

@@ -1,0 +1,22 @@
+hand_config:
+  joints:
+    - name: thumb_proximal_yaw_joint
+      limit_max: 1.308
+      default_position: 0.0
+    - name: thumb_proximal_pitch_joint
+      limit_max: 0.6
+      default_position: 0.0
+    - name: index_proximal_joint
+      limit_max: 1.47
+      default_position: 0.0
+    - name: middle_proximal_joint
+      limit_max: 1.47
+      default_position: 0.0
+    - name: ring_proximal_joint
+      limit_max: 1.47
+      default_position: 0.0
+    - name: pinky_proximal_joint
+      limit_max: 1.47
+      default_position: 0.0
+
+  publish_rate: 10  # Hz
