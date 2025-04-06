@@ -10,7 +10,7 @@ def generate_launch_description():
     pkg_dir = get_package_share_directory('arm_hand_control')
 
     # Default config file path (relative to package)
-    default_config = os.path.join('config', 'hand_config.yaml')
+    default_config = os.path.join('config', 'hand/inspire_rh56.yaml')
 
     # Declare the config file path as a launch argument
     config_arg = DeclareLaunchArgument(

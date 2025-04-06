@@ -8,7 +8,7 @@ namespace arm_hand_control
 HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interpreter")
 {
   // Declare parameters
-  this->declare_parameter("config_file", "config/hand_config.yaml");
+  this->declare_parameter("config_file", "config/hand/inspire_rh56.yaml");
 
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
