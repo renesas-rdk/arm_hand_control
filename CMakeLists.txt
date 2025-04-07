@@ -27,9 +27,21 @@ ament_target_dependencies(hand_gesture_interpreter
 target_link_libraries(hand_gesture_interpreter ${YAML_CPP_LIBRARIES})
 target_include_directories(hand_gesture_interpreter PUBLIC ${YAML_CPP_INCLUDE_DIRS})
 
+# Add the hand landmark interpreter executable
+add_executable(hand_landmark_interpreter src/hand_landmark_interpreter_node.cpp)
+ament_target_dependencies(hand_landmark_interpreter
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  ament_index_cpp
+)
+target_link_libraries(hand_landmark_interpreter ${YAML_CPP_LIBRARIES})
+target_include_directories(hand_landmark_interpreter PUBLIC ${YAML_CPP_INCLUDE_DIRS})
+
 # Install executables
 install(TARGETS
   hand_gesture_interpreter
+  hand_landmark_interpreter
   DESTINATION lib/${PROJECT_NAME}
 )
 
