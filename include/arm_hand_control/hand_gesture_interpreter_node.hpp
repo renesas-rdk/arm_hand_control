@@ -38,8 +38,7 @@ private:
   std::map<std::string, double> joint_limits_;
 
   // Joint classifications
-  std::map<std::string, std::map<std::string, std::vector<std::string>>> finger_joints_;  // finger -> role -> joint
-                                                                                          // names
+  std::map<std::string, std::map<std::string, std::vector<std::string>>> finger_joints_;
   std::map<std::string, JointConfig> joint_configs_;
 
   // Configuration

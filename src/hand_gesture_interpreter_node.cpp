@@ -297,16 +297,50 @@ void HandGestureInterpreter::pinch(double percentage)
   // Reset all positions first
   reset_joint_positions();
 
-  // Position thumb
-  set_finger_positions("thumb", percentage);
+  // Position the thumb with more control over its joints
+  if (finger_joints_.count("thumb") > 0)
+  {
+    // For the yaw component of the thumb, use a reduced percentage to avoid
+    // thumb moving too close to the palm
+    if (finger_joints_["thumb"].count("yaw") > 0)
+    {
+      for (const auto& joint : finger_joints_["thumb"]["yaw"])
+      {
+        joint_positions_[joint] = joint_limits_[joint] * 0.9 * percentage;
+      }
+    }
 
-  // Position index finger
-  set_finger_positions("index", percentage * 0.7);  // Slightly less closed than a full grasp
+    // For pitch joints, use a higher percentage to bring thumb tip toward index
+    if (finger_joints_["thumb"].count("pitch") > 0)
+    {
+      for (const auto& joint : finger_joints_["thumb"]["pitch"])
+      {
+        joint_positions_[joint] = joint_limits_[joint] * 0.4 * percentage;
+      }
+    }
+
+    // For other thumb joints (like flex/curl), use a moderate value
+    for (const auto& role_entry : finger_joints_["thumb"])
+    {
+      if (role_entry.first != "yaw" && role_entry.first != "pitch")
+      {
+        for (const auto& joint_name : role_entry.second)
+        {
+          joint_positions_[joint_name] = joint_limits_[joint_name] * 0.6 * percentage;
+        }
+      }
+    }
+  }
+
+  // Position index finger - slightly less closed to meet the thumb
+  set_finger_positions("index", percentage * 0.6);
 
   // Close other fingers fully or not at all depending on percentage
   double other_percentage = percentage > 0.3 ? 1.0 : 0.0;
   std::vector<std::string> exceptions = { "thumb", "index" };
   set_all_fingers_except(exceptions, other_percentage);
+
+  RCLCPP_DEBUG(this->get_logger(), "Pinch gesture set with percentage: %f", percentage);
 }
 
 void HandGestureInterpreter::point()
