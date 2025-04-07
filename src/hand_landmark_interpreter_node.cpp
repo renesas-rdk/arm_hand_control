@@ -224,7 +224,7 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
     return 0.0;
   }
 
-  // Simple angle-based calculation
+  // Enhanced 2D angle-based calculation
   double curl = 0.0;
 
   // Use dot products to estimate curl
@@ -255,17 +255,50 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
       // Convert dot product to angle
       double angle = acos(dot_product);
 
-      // Add to curl measure
-      curl += angle;
+      // Add to curl measure with higher weight for better fist detection
+      curl += angle * 1.5;
     }
   }
 
-  // Normalize to [0, 1] range
+  // For a fist, we also consider the proximity of fingertip to the base of the finger
+  // Calculate the distance between tip and base
+  int tip_idx = start_idx + num_joints - 1;  // Fingertip
+
+  // Calculate distance from fingertip to base (MCP joint)
+  double dx_tip_to_base = landmarks[tip_idx].position.x - landmarks[start_idx].position.x;
+  double dy_tip_to_base = landmarks[tip_idx].position.y - landmarks[start_idx].position.y;
+  double dist_tip_to_base = sqrt(dx_tip_to_base * dx_tip_to_base + dy_tip_to_base * dy_tip_to_base);
+
+  // Calculate an expected length of the finger when extended
+  double expected_finger_length = 0.0;
+  for (int i = start_idx; i < start_idx + num_joints - 1; i++)
+  {
+    double dx = landmarks[i + 1].position.x - landmarks[i].position.x;
+    double dy = landmarks[i + 1].position.y - landmarks[i].position.y;
+    expected_finger_length += sqrt(dx * dx + dy * dy);
+  }
+
+  // If the finger is curled into a fist, the tip-to-base distance will be much smaller
+  // than the extended finger length
+  if (expected_finger_length > 0)
+  {
+    double curl_factor = 1.0 - (dist_tip_to_base / expected_finger_length);
+    curl_factor = std::max(0.0, curl_factor);  // Ensure positive
+
+    // Give more weight to the curl factor for better fist detection
+    curl += curl_factor * 1.5;
+  }
+
+  // Normalize to [0, 1] range with improved scaling
   if (num_joints > 2)
   {
-    // Maximum theoretical curl would be PI radians per joint connection
-    double max_curl = M_PI * (num_joints - 2);
+    // Adjusted maximum theoretical curl with increased weights
+    double max_curl = (M_PI * (num_joints - 2) * 1.5) + 1.5;  // Adjusted for stronger weights
     curl = std::min(curl / max_curl, 1.0);
+
+    // Apply a stronger power function to enhance the curl effect
+    // This will make partially curled fingers appear more closed
+    curl = std::pow(curl, 0.6);  // Lower exponent for stronger enhancement
   }
 
   return curl;
@@ -285,8 +318,36 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
   double ring_curl = calculate_finger_curl(landmarks, RING_MCP_IDX, 4);
   double pinky_curl = calculate_finger_curl(landmarks, PINKY_MCP_IDX, 4);
 
-  // Calculate thumb opposition (position relative to palm)
-  // Higher value means thumb is more opposed to the palm
+  // Lower threshold for more sensitive detection of fist state
+  const double CLOSED_THRESHOLD = 0.65;
+
+  // Apply threshold to finger curls
+  if (index_curl > CLOSED_THRESHOLD)
+    index_curl = 1.0;
+  if (middle_curl > CLOSED_THRESHOLD)
+    middle_curl = 1.0;
+  if (ring_curl > CLOSED_THRESHOLD)
+    ring_curl = 1.0;
+  if (pinky_curl > CLOSED_THRESHOLD)
+    pinky_curl = 1.0;
+
+  // Detect fist gesture - all fingers curled beyond threshold
+  bool is_fist = (index_curl > CLOSED_THRESHOLD && middle_curl > CLOSED_THRESHOLD && ring_curl > CLOSED_THRESHOLD &&
+                  pinky_curl > CLOSED_THRESHOLD);
+
+  // When a fist is detected, ensure all fingers are fully closed
+  if (is_fist)
+  {
+    index_curl = 1.0;
+    middle_curl = 1.0;
+    ring_curl = 1.0;
+    pinky_curl = 1.0;
+
+    // Enhance thumb curl for a tighter fist
+    thumb_curl = std::max(thumb_curl, 0.9);
+  }
+
+  // Calculate thumb opposition with improved directionality
   double thumb_oppose = 0.0;
   if (landmarks.size() >= static_cast<size_t>(THUMB_TIP_IDX + 1))
   {
@@ -300,15 +361,35 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
 
     if (hand_size > 0)
     {
-      thumb_oppose = std::sqrt(dx * dx + dy * dy) / hand_size;
+      // Calculate raw thumb opposition value
+      double raw_oppose = std::sqrt(dx * dx + dy * dy) / hand_size;
+
+      // Determine thumb direction relative to palm
+      // This uses the cross product sign to determine if the thumb is going in the correct direction
+      double palm_dir_x = landmarks[MIDDLE_MCP_IDX].position.x - landmarks[WRIST_IDX].position.x;
+      double palm_dir_y = landmarks[MIDDLE_MCP_IDX].position.y - landmarks[WRIST_IDX].position.y;
+
+      // Cross product to determine direction (2D version)
+      double cross_product = palm_dir_x * dy - palm_dir_y * dx;
+
+      // Adjust opposition value based on direction - flip if needed
+      thumb_oppose = (cross_product >= 0) ? raw_oppose : (1.0 - raw_oppose);
+
+      // Adjust opposition when in fist mode to ensure correct thumb position
+      if (is_fist)
+      {
+        // For fist, ensure thumb is properly opposed
+        thumb_oppose = std::max(thumb_oppose, 0.7);
+      }
+
       // Normalize to [0, 1]
-      thumb_oppose = std::min(thumb_oppose, 1.0);
+      thumb_oppose = std::max(0.0, std::min(thumb_oppose, 1.0));
     }
   }
 
   RCLCPP_DEBUG(this->get_logger(),
-               "Finger curls: Thumb=%.2f, Index=%.2f, Middle=%.2f, Ring=%.2f, Pinky=%.2f, Thumb Oppose=%.2f",
-               thumb_curl, index_curl, middle_curl, ring_curl, pinky_curl, thumb_oppose);
+               "Finger curls: Thumb=%.2f, Index=%.2f, Middle=%.2f, Ring=%.2f, Pinky=%.2f, Thumb Oppose=%.2f, Fist=%d",
+               thumb_curl, index_curl, middle_curl, ring_curl, pinky_curl, thumb_oppose, is_fist);
 
   // Map the curl values to joint positions
 
@@ -321,7 +402,15 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
     {
       for (const auto& joint : finger_joints_["thumb"]["flex"])
       {
-        joint_positions_[joint] = joint_limits_[joint] * thumb_flex_percentage;
+        // For fist, ensure thumb is properly flexed
+        if (is_fist)
+        {
+          joint_positions_[joint] = joint_limits_[joint] * 0.9;  // Strong flex in fist
+        }
+        else
+        {
+          joint_positions_[joint] = joint_limits_[joint] * thumb_flex_percentage;
+        }
       }
     }
 
@@ -330,7 +419,15 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
     {
       for (const auto& joint : finger_joints_["thumb"]["yaw"])
       {
-        joint_positions_[joint] = joint_limits_[joint] * thumb_oppose;
+        // For fist, set a specific thumb yaw position
+        if (is_fist)
+        {
+          joint_positions_[joint] = joint_limits_[joint] * 0.8;  // Strong opposition in fist
+        }
+        else
+        {
+          joint_positions_[joint] = joint_limits_[joint] * thumb_oppose;
+        }
       }
     }
 
@@ -339,7 +436,15 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
     {
       for (const auto& joint : finger_joints_["thumb"]["pitch"])
       {
-        joint_positions_[joint] = joint_limits_[joint] * thumb_oppose;
+        // For fist, set a specific thumb pitch position
+        if (is_fist)
+        {
+          joint_positions_[joint] = joint_limits_[joint] * 0.8;  // Strong pitch in fist
+        }
+        else
+        {
+          joint_positions_[joint] = joint_limits_[joint] * thumb_oppose;
+        }
       }
     }
   }
@@ -363,6 +468,23 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
   if (finger_joints_.count("pinky") > 0)
   {
     set_finger_positions("pinky", pinky_curl);
+  }
+
+  // Apply extra palm closing for fist gesture
+  if (is_fist)
+  {
+    // Find and set any palm-related joints to close the palm completely
+    for (const auto& joint_entry : joint_configs_)
+    {
+      const auto& config = joint_entry.second;
+      // Look for any joints that might be related to palm closure
+      if (config.role == "palm" || config.role == "closure" || config.name.find("palm") != std::string::npos ||
+          config.name.find("close") != std::string::npos)
+      {
+        // Set to maximum curl for complete closure
+        joint_positions_[config.name] = joint_limits_[config.name];
+      }
+    }
   }
 }
 
