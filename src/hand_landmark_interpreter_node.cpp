@@ -224,15 +224,19 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
     return 0.0;
   }
 
-  // Enhanced 2D angle-based calculation
+  // Enhanced calculation focusing on key landmarks (MCP joints)
   double curl = 0.0;
 
-  // Use dot products to estimate curl
+  // Calculate joint angles with specific focus on MCP joint angles
+  // MCP joints are at indices 2 (thumb), 6 (index), 10 (middle), 14 (ring), 18 (pinky)
+
+  // Create vectors between joints with 2D information
   for (int i = start_idx; i < start_idx + num_joints - 2; i++)
   {
-    // Create vectors between joints
+    // Create vectors between joints using 2D information (x,y)
     double v1x = landmarks[i + 1].position.x - landmarks[i].position.x;
     double v1y = landmarks[i + 1].position.y - landmarks[i].position.y;
+
     double v2x = landmarks[i + 2].position.x - landmarks[i + 1].position.x;
     double v2y = landmarks[i + 2].position.y - landmarks[i + 1].position.y;
 
@@ -244,6 +248,7 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
     {
       v1x /= len1;
       v1y /= len1;
+
       v2x /= len2;
       v2y /= len2;
 
@@ -252,22 +257,36 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
       // Constrain to range [-1, 1] for acos
       dot_product = std::max(-1.0, std::min(1.0, dot_product));
 
-      // Convert dot product to angle
+      // Convert dot product to angle in radians
       double angle = acos(dot_product);
 
-      // Add to curl measure with higher weight for better fist detection
-      curl += angle * 1.5;
+      // Apply different weights based on joint position
+      double weight = 1.0;
+
+      // Give more weight to MCP joint angles (first joint in the chain)
+      if (i == start_idx)
+      {
+        // If this is the MCP joint (landmarks 2, 6, 10, 14, 18)
+        weight = 2.0;
+      }
+      else if (i == start_idx + 1)
+      {
+        // PIP joint (landmarks 3, 7, 11, 15, 19)
+        weight = 1.5;
+      }
+
+      curl += angle * weight;
     }
   }
 
-  // For a fist, we also consider the proximity of fingertip to the base of the finger
-  // Calculate the distance between tip and base
+  // For a fist, we also consider the proximity of fingertip to palm
   int tip_idx = start_idx + num_joints - 1;  // Fingertip
+  int mcp_idx = start_idx;                   // MCP joint (landmarks 2, 6, 10, 14, 18)
 
-  // Calculate distance from fingertip to base (MCP joint)
-  double dx_tip_to_base = landmarks[tip_idx].position.x - landmarks[start_idx].position.x;
-  double dy_tip_to_base = landmarks[tip_idx].position.y - landmarks[start_idx].position.y;
-  double dist_tip_to_base = sqrt(dx_tip_to_base * dx_tip_to_base + dy_tip_to_base * dy_tip_to_base);
+  // Calculate 2D distance from fingertip to MCP joint
+  double dx = landmarks[tip_idx].position.x - landmarks[mcp_idx].position.x;
+  double dy = landmarks[tip_idx].position.y - landmarks[mcp_idx].position.y;
+  double dist_tip_to_mcp = sqrt(dx * dx + dy * dy);
 
   // Calculate an expected length of the finger when extended
   double expected_finger_length = 0.0;
@@ -278,28 +297,26 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
     expected_finger_length += sqrt(dx * dx + dy * dy);
   }
 
-  // If the finger is curled into a fist, the tip-to-base distance will be much smaller
+  // If the finger is curled, the tip-to-MCP distance will be much smaller
   // than the extended finger length
   if (expected_finger_length > 0)
   {
-    double curl_factor = 1.0 - (dist_tip_to_base / expected_finger_length);
+    double curl_factor = 1.0 - (dist_tip_to_mcp / expected_finger_length);
     curl_factor = std::max(0.0, curl_factor);  // Ensure positive
 
-    // Give more weight to the curl factor for better fist detection
-    curl += curl_factor * 1.5;
+    // Add this proximity-based curl measure with appropriate weight
+    curl += curl_factor * 1.8;  // Higher weight for improved detection
   }
 
-  // Normalize to [0, 1] range with improved scaling
-  if (num_joints > 2)
-  {
-    // Adjusted maximum theoretical curl with increased weights
-    double max_curl = (M_PI * (num_joints - 2) * 1.5) + 1.5;  // Adjusted for stronger weights
-    curl = std::min(curl / max_curl, 1.0);
+  // Normalize to [0, 1] range - calculation based on expected max curl values
+  // For a typical finger with 3 segments, max theoretical curl would be:
+  // (PI * 2 joints * weights) + tip_proximity_weight
+  double max_theoretical_curl = (M_PI * 2.0 * 3.5) + 1.8;  // Based on weights used
+  curl = std::min(curl / max_theoretical_curl, 1.0);
 
-    // Apply a stronger power function to enhance the curl effect
-    // This will make partially curled fingers appear more closed
-    curl = std::pow(curl, 0.6);  // Lower exponent for stronger enhancement
-  }
+  // Apply non-linear scaling to improve sensitivity
+  // This makes the middle range of motion more sensitive
+  curl = std::pow(curl, 0.7);
 
   return curl;
 }
