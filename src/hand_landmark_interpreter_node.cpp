@@ -331,6 +331,9 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
 
   // Calculate curl (bend) for each finger
   double thumb_curl = calculate_finger_curl(landmarks, THUMB_CMC_IDX, 4);
+  // Add debugging info for thumb values
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Thumb curl raw value: %.3f", thumb_curl);
+
   double index_curl = calculate_finger_curl(landmarks, INDEX_MCP_IDX, 4);
   double middle_curl = calculate_finger_curl(landmarks, MIDDLE_MCP_IDX, 4);
   double ring_curl = calculate_finger_curl(landmarks, RING_MCP_IDX, 4);
@@ -391,6 +394,9 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
     double dx = landmarks[THUMB_TIP_IDX].position.x - landmarks[INDEX_MCP_IDX].position.x;
     double dy = landmarks[THUMB_TIP_IDX].position.y - landmarks[INDEX_MCP_IDX].position.y;
 
+    // DEBUGGING: Print the thumb tip position relative to index MCP
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Thumb tip relative: dx=%.3f, dy=%.3f", dx, dy);
+
     // Normalize by hand size (distance between wrist and middle MCP)
     double hand_size = std::sqrt(std::pow(landmarks[MIDDLE_MCP_IDX].position.x - landmarks[WRIST_IDX].position.x, 2) +
                                  std::pow(landmarks[MIDDLE_MCP_IDX].position.y - landmarks[WRIST_IDX].position.y, 2));
@@ -400,26 +406,16 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
       // Calculate raw thumb opposition value
       double raw_oppose = std::sqrt(dx * dx + dy * dy) / hand_size;
 
-      // Determine thumb direction relative to palm
-      // This uses the cross product sign to determine if the thumb is going in the correct direction
-      double palm_dir_x = landmarks[MIDDLE_MCP_IDX].position.x - landmarks[WRIST_IDX].position.x;
-      double palm_dir_y = landmarks[MIDDLE_MCP_IDX].position.y - landmarks[WRIST_IDX].position.y;
+      // DEBUGGING: Log the raw opposition value
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Thumb raw opposition: %.3f, hand_size: %.3f",
+                           raw_oppose, hand_size);
 
-      // Cross product to determine direction (2D version)
-      double cross_product = palm_dir_x * dy - palm_dir_y * dx;
+      // Map the raw opposition to a range that works well for the thumb
+      // Lower values when the thumb is farther from the index finger
+      thumb_oppose = std::max(0.0, std::min(1.0 - (raw_oppose * 0.5), 1.0));
 
-      // Adjust opposition value based on direction - flip if needed
-      thumb_oppose = (cross_product >= 0) ? raw_oppose : (1.0 - raw_oppose);
-
-      // Adjust opposition when in fist mode to ensure correct thumb position
-      if (is_fist)
-      {
-        // For fist, ensure thumb is properly opposed
-        thumb_oppose = std::max(thumb_oppose, 0.7);
-      }
-
-      // Normalize to [0, 1]
-      thumb_oppose = std::max(0.0, std::min(thumb_oppose, 1.0));
+      // DEBUGGING: Log the final thumb opposition
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Final thumb oppose: %.3f", thumb_oppose);
     }
   }
 
@@ -429,41 +425,47 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
 
   // Map the curl values to joint positions
 
+  // CRITICAL: Ensure the thumb receives proper values
+  // Directly verify joint names and positions for thumb
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Thumb curl: %.3f, Thumb oppose: %.3f", thumb_curl,
+                       thumb_oppose);
+
+  // Log current thumb joints before setting new positions
+  if (finger_joints_.count("thumb") > 0)
+  {
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Number of thumb joint groups: %zu",
+                         finger_joints_["thumb"].size());
+
+    // Check what roles exist for thumb
+    for (const auto& role_entry : finger_joints_["thumb"])
+    {
+      RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Thumb role: %s, joints: %zu",
+                           role_entry.first.c_str(), role_entry.second.size());
+    }
+  }
+  else
+  {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "No thumb joints configured!");
+  }
+
   // Thumb has special treatment - needs both curl and opposition
   if (finger_joints_.count("thumb") > 0)
   {
-    // Set thumb curl (flex joints)
-    double thumb_flex_percentage = thumb_curl;
-    if (finger_joints_["thumb"].count("flex") > 0)
-    {
-      for (const auto& joint : finger_joints_["thumb"]["flex"])
-      {
-        // For fist, ensure thumb is properly flexed
-        if (is_fist)
-        {
-          joint_positions_[joint] = joint_limits_[joint] * 0.9;  // Strong flex in fist
-        }
-        else
-        {
-          joint_positions_[joint] = joint_limits_[joint] * thumb_flex_percentage;
-        }
-      }
-    }
+    // Amplify thumb curl to make it more responsive
+    thumb_curl = std::min(thumb_curl * 1.5, 1.0);  // 50% amplification
 
     // Set thumb yaw (side-to-side movement)
     if (finger_joints_["thumb"].count("yaw") > 0)
     {
       for (const auto& joint : finger_joints_["thumb"]["yaw"])
       {
-        // For fist, set a specific thumb yaw position
-        if (is_fist)
-        {
-          joint_positions_[joint] = joint_limits_[joint] * 0.8;  // Strong opposition in fist
-        }
-        else
-        {
-          joint_positions_[joint] = joint_limits_[joint] * thumb_oppose;
-        }
+        // Invert the calculation to make thumb movement more intuitive
+        // When opposition is high (thumb close to fingers), yaw should be high
+        double yaw_value = joint_limits_[joint] * thumb_oppose;
+        joint_positions_[joint] = yaw_value;
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                             "Setting thumb yaw joint %s to %f (limit: %f)", joint.c_str(), joint_positions_[joint],
+                             joint_limits_[joint]);
       }
     }
 
@@ -472,15 +474,25 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
     {
       for (const auto& joint : finger_joints_["thumb"]["pitch"])
       {
-        // For fist, set a specific thumb pitch position
-        if (is_fist)
-        {
-          joint_positions_[joint] = joint_limits_[joint] * 0.8;  // Strong pitch in fist
-        }
-        else
-        {
-          joint_positions_[joint] = joint_limits_[joint] * thumb_oppose;
-        }
+        // Use curl for the pitch - makes the thumb bend inward with the curl
+        double pitch_value = joint_limits_[joint] * thumb_curl;
+        joint_positions_[joint] = pitch_value;
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                             "Setting thumb pitch joint %s to %f (limit: %f)", joint.c_str(), joint_positions_[joint],
+                             joint_limits_[joint]);
+      }
+    }
+
+    // Set thumb flex joints if they exist
+    if (finger_joints_["thumb"].count("flex") > 0)
+    {
+      for (const auto& joint : finger_joints_["thumb"]["flex"])
+      {
+        // Use curl for flex
+        joint_positions_[joint] = joint_limits_[joint] * thumb_curl;
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                             "Setting thumb flex joint %s to %f (limit: %f)", joint.c_str(), joint_positions_[joint],
+                             joint_limits_[joint]);
       }
     }
   }
