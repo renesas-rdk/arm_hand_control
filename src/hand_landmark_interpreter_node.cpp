@@ -25,14 +25,12 @@ HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpr
   load_configuration();
 
   // Create publisher
-  auto qos = rclcpp::QoS(10).reliable();
+  auto qos = rclcpp::QoS(1).best_effort().durability_volatile();
   joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
 
   // Create subscriber to hand landmarks
   landmark_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseArray>(
-      "hand_landmarks", 10, std::bind(&HandLandmarkInterpreter::landmark_callback, this, std::placeholders::_1));
-
-  // NOTE: Timer for publishing is removed as we'll publish immediately after landmark processing
+      "hand_landmarks", qos, std::bind(&HandLandmarkInterpreter::landmark_callback, this, std::placeholders::_1));
 
   RCLCPP_INFO(this->get_logger(), "Hand landmark interpreter started");
 }
@@ -43,9 +41,6 @@ void HandLandmarkInterpreter::load_configuration()
   {
     RCLCPP_INFO(this->get_logger(), "Loading configuration from: %s", config_file_path_.c_str());
     YAML::Node config = YAML::LoadFile(config_file_path_);
-
-    // Get publish rate
-    publish_rate_hz_ = config["hand_config"]["publish_rate"].as<double>();
 
     // Load joint configurations
     YAML::Node joints = config["hand_config"]["joints"];
@@ -89,9 +84,6 @@ void HandLandmarkInterpreter::load_configuration()
   {
     RCLCPP_ERROR(this->get_logger(), "Error loading configuration: %s", e.what());
     RCLCPP_INFO(this->get_logger(), "Using default configuration");
-
-    // Set default values in case of error
-    publish_rate_hz_ = 30.0;
 
     // Define default joints with finger and role classifications
     std::vector<JointConfig> default_joints = { { "thumb_proximal_yaw_joint", "thumb", "yaw", 1.308, 0.0 },

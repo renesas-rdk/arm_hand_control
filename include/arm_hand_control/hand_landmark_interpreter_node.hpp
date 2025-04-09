@@ -52,7 +52,6 @@ private:
 
   // Configuration data
   std::string config_file_path_;
-  double publish_rate_hz_ = 30.0;
 
   // Joint data structures
   std::vector<std::string> joint_names_;

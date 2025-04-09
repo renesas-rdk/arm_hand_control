@@ -24,12 +24,12 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   load_configuration();
 
   // Create publisher
-  auto qos = rclcpp::QoS(10).reliable();
+  auto qos = rclcpp::QoS(1).reliable().durability_volatile();
   joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
 
   // Create subscriber
   gesture_subscriber_ = this->create_subscription<std_msgs::msg::String>(
-      "hand_gesture", 10, std::bind(&HandGestureInterpreter::gesture_callback, this, std::placeholders::_1));
+      "hand_gesture", qos, std::bind(&HandGestureInterpreter::gesture_callback, this, std::placeholders::_1));
 
   // Create timer for publishing joint states
   timer_ = this->create_wall_timer(std::chrono::milliseconds(static_cast<int>(1000.0 / publish_rate_hz_)),
