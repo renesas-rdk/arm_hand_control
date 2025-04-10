@@ -16,7 +16,7 @@ find_package(ament_index_cpp REQUIRED)
 # Include directories
 include_directories(include)
 
-# Executable
+# Add the hand gesture interpreter executable
 add_executable(hand_gesture_interpreter src/hand_gesture_interpreter_node.cpp)
 ament_target_dependencies(hand_gesture_interpreter
   rclcpp
@@ -38,10 +38,22 @@ ament_target_dependencies(hand_landmark_interpreter
 target_link_libraries(hand_landmark_interpreter ${YAML_CPP_LIBRARIES})
 target_include_directories(hand_landmark_interpreter PUBLIC ${YAML_CPP_INCLUDE_DIRS})
 
+# Add the inspire rh56 dexhand executable
+add_executable(inspire_rh56_dexhand src/inspire_rh56_dexhand_node.cpp)
+ament_target_dependencies(inspire_rh56_dexhand
+  rclcpp
+  sensor_msgs
+  std_msgs
+  ament_index_cpp
+)
+target_link_libraries(inspire_rh56_dexhand ${YAML_CPP_LIBRARIES})
+target_include_directories(inspire_rh56_dexhand PUBLIC ${YAML_CPP_INCLUDE_DIRS})
+
 # Install executables
 install(TARGETS
   hand_gesture_interpreter
   hand_landmark_interpreter
+  inspire_rh56_dexhand
   DESTINATION lib/${PROJECT_NAME}
 )
 
