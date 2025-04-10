@@ -1,7 +1,7 @@
+#include <cmath>
+
 #include "arm_hand_control/hand_landmark_interpreter_node.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
-#include <filesystem>
-#include <cmath>
 
 namespace arm_hand_control
 {
@@ -14,25 +14,27 @@ HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpr
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
 
-  // Make the path absolute if it's relative
-  if (!std::filesystem::path(config_file_path_).is_absolute())
-  {
-    std::string pkg_path = ament_index_cpp::get_package_share_directory("arm_hand_control");
-    config_file_path_ = pkg_path + "/" + config_file_path_;
-  }
-
   // Load configuration
   load_configuration();
 
-  // Create publisher
+  // Set up the node's QoS settings
   auto qos = rclcpp::QoS(1).best_effort().durability_volatile();
-  joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
 
   // Create subscriber to hand landmarks
   landmark_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseArray>(
       "hand_landmarks", qos, std::bind(&HandLandmarkInterpreter::landmark_callback, this, std::placeholders::_1));
 
+  // Create publisher for joint states
+  joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
+
   RCLCPP_INFO(this->get_logger(), "Hand landmark interpreter started");
+}
+
+HandLandmarkInterpreter::~HandLandmarkInterpreter()
+{
+  RCLCPP_INFO(this->get_logger(), "Hand landmark interpreter shutting down");
+  landmark_subscriber_.reset();
+  joint_state_publisher_.reset();
 }
 
 void HandLandmarkInterpreter::load_configuration()
@@ -106,18 +108,11 @@ void HandLandmarkInterpreter::load_configuration()
 
 void HandLandmarkInterpreter::landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg)
 {
-  if (msg->poses.size() >= 21)  // Check for complete hand landmarks (MediaPipe model has 21 landmarks)
+  if (msg->poses.size() >= static_cast<size_t>(HAND_LANDMARK_COUNT))
   {
-    landmarks_received_ = true;
-    last_landmarks_ = msg->poses;
-
     RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Received %zu hand landmarks",
-                         last_landmarks_.size());
-
-    // Process the landmarks to update joint positions
-    process_landmarks(last_landmarks_);
-
-    // Publish joint states immediately after processing landmarks
+                         msg->poses.size());
+    process_landmarks(msg->poses);
     publish_joint_states();
   }
   else
@@ -129,11 +124,6 @@ void HandLandmarkInterpreter::landmark_callback(const geometry_msgs::msg::PoseAr
 
 void HandLandmarkInterpreter::publish_joint_states()
 {
-  if (!landmarks_received_)
-  {
-    return;  // Don't publish until we've received landmarks
-  }
-
   auto msg = sensor_msgs::msg::JointState();
   msg.header.stamp = this->now();
 
@@ -146,8 +136,7 @@ void HandLandmarkInterpreter::publish_joint_states()
   joint_state_publisher_->publish(msg);
 }
 
-// Helper methods to work with finger abstractions
-void HandLandmarkInterpreter::set_finger_position(const std::string& finger, const std::string& role, double position)
+void HandLandmarkInterpreter::set_finger_position(const std::string& finger, const std::string& role, double percentage)
 {
   auto finger_it = finger_joints_.find(finger);
   if (finger_it != finger_joints_.end())
@@ -157,7 +146,7 @@ void HandLandmarkInterpreter::set_finger_position(const std::string& finger, con
     {
       for (const auto& joint_name : role_it->second)
       {
-        joint_positions_[joint_name] = position;
+        joint_positions_[joint_name] = joint_limits_[joint_name] * percentage;
       }
     }
   }
@@ -189,12 +178,12 @@ void HandLandmarkInterpreter::set_all_fingers_except(const std::vector<std::stri
   }
 }
 
-void HandLandmarkInterpreter::set_joint_position(const std::string& joint_name, double position)
+void HandLandmarkInterpreter::set_joint_position(const std::string& joint_name, double percentage)
 {
   auto it = joint_positions_.find(joint_name);
   if (it != joint_positions_.end())
   {
-    it->second = position;
+    it->second = joint_limits_[joint_name] * percentage;
   }
 }
 
@@ -207,286 +196,86 @@ void HandLandmarkInterpreter::reset_joint_positions()
 }
 
 double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry_msgs::msg::Pose>& landmarks,
-                                                      int start_idx, int num_joints)
+                                                      const std::string& finger)
 {
-  // Calculate the curl (bending) of a finger based on landmark positions
-  if (landmarks.size() < static_cast<size_t>(start_idx + num_joints))
+  // Struct to define parameters for finger angle calculation
+  struct finger_angle_config
+  {
+    int tip_idx;               // landmark index of fingertip
+    int mid_idx;               // landmark index of middle joint
+    int base_idx;              // landmark index of base joint
+    double offset;             // angle offset
+    double scale;              // scaling factor
+    double additional_offset;  // additional offset for thumb
+    double max_angle;          // maximum angle (for percentage normalization)
+  };
+
+  // Map fingers to their landmark configuration for angle calculation
+  static const std::map<std::string, finger_angle_config> finger_configs = {
+    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
+    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
+    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
+    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
+    { "thumb_pitch", { THUMB_TIP_IDX, THUMB_MCP_IDX, THUMB_CMC_IDX, -100.0, 1.25, -30.0, 180.0 } },
+    { "thumb_yaw", { THUMB_MCP_IDX, THUMB_CMC_IDX, INDEX_MCP_IDX, 0.0, 2.5, 70.0, 180.0 } }
+  };
+
+  const auto& config = finger_configs.at(finger);
+
+  // Extract vectors for angle calculation
+  std::vector<double> tip_to_mid = { landmarks[config.tip_idx].position.x - landmarks[config.mid_idx].position.x,
+                                     landmarks[config.tip_idx].position.y - landmarks[config.mid_idx].position.y };
+
+  std::vector<double> base_to_mid = { landmarks[config.base_idx].position.x - landmarks[config.mid_idx].position.x,
+                                      landmarks[config.base_idx].position.y - landmarks[config.mid_idx].position.y };
+
+  // Calculate vector magnitudes
+  double mag_tip_to_mid = std::sqrt(tip_to_mid[0] * tip_to_mid[0] + tip_to_mid[1] * tip_to_mid[1]);
+  double mag_base_to_mid = std::sqrt(base_to_mid[0] * base_to_mid[0] + base_to_mid[1] * base_to_mid[1]);
+
+  // Prevent division by zero
+  if (mag_tip_to_mid < 0.0001 || mag_base_to_mid < 0.0001)
   {
     return 0.0;
   }
 
-  double curl = 0.0;
+  // Calculate angle between vectors
+  double dot_product = tip_to_mid[0] * base_to_mid[0] + tip_to_mid[1] * base_to_mid[1];
+  double cosine_theta = std::min(1.0, std::max(-1.0, dot_product / (mag_tip_to_mid * mag_base_to_mid)));
+  double angle_degrees = std::acos(cosine_theta) * 180.0 / M_PI;
 
-  // Calculate joint angles with specific focus on MCP joint angles
-  for (int i = start_idx; i < start_idx + num_joints - 2; i++)
-  {
-    // Create vectors between joints using 2D information (x,y)
-    double v1x = landmarks[i + 1].position.x - landmarks[i].position.x;
-    double v1y = landmarks[i + 1].position.y - landmarks[i].position.y;
+  // Apply the scaling and offset from the original algorithm
+  double raw_angle = (angle_degrees + config.offset) * config.scale;
 
-    double v2x = landmarks[i + 2].position.x - landmarks[i + 1].position.x;
-    double v2y = landmarks[i + 2].position.y - landmarks[i + 1].position.y;
+  // Convert to percentage (0.0 to 1.0)
+  // For straight finger, angle is large; for curled finger, angle is small
+  double percentage = 1.0 - (raw_angle / config.max_angle);
 
-    // Normalize vectors
-    double len1 = sqrt(v1x * v1x + v1y * v1y);
-    double len2 = sqrt(v2x * v2x + v2y * v2y);
-
-    if (len1 > 0 && len2 > 0)
-    {
-      v1x /= len1;
-      v1y /= len1;
-      v2x /= len2;
-      v2y /= len2;
-
-      // Calculate the angle between vectors using dot product
-      double dot_product = v1x * v2x + v1y * v2y;
-      dot_product = std::max(-1.0, std::min(1.0, dot_product));
-      double angle = acos(dot_product);
-
-      // Apply different weights based on joint position
-      double weight = 1.0;
-      if (i == start_idx)
-      {
-        // If this is the MCP joint (landmarks 2, 6, 10, 14, 18)
-        weight = 2.5;
-      }
-      else if (i == start_idx + 1)
-      {
-        // PIP joint (landmarks 3, 7, 11, 15, 19)
-        weight = 2.0;
-      }
-
-      curl += angle * weight;
-    }
-  }
-
-  // For a fist, also consider the proximity of fingertip to palm
-  int tip_idx = start_idx + num_joints - 1;  // Fingertip
-  int mcp_idx = start_idx;                   // MCP joint
-
-  // Calculate 2D distance from fingertip to MCP joint
-  double dx = landmarks[tip_idx].position.x - landmarks[mcp_idx].position.x;
-  double dy = landmarks[tip_idx].position.y - landmarks[mcp_idx].position.y;
-  double dist_tip_to_mcp = sqrt(dx * dx + dy * dy);
-
-  // Calculate an expected length of the finger when extended
-  double expected_finger_length = 0.0;
-  for (int i = start_idx; i < start_idx + num_joints - 1; i++)
-  {
-    double dx = landmarks[i + 1].position.x - landmarks[i].position.x;
-    double dy = landmarks[i + 1].position.y - landmarks[i].position.y;
-    expected_finger_length += sqrt(dx * dx + dy * dy);
-  }
-
-  // If the finger is curled, the tip-to-MCP distance will be much smaller than extended length
-  if (expected_finger_length > 0)
-  {
-    double curl_factor = 1.0 - (dist_tip_to_mcp / expected_finger_length);
-    curl_factor = std::max(0.0, curl_factor);
-    curl += curl_factor * 2.2;
-  }
-
-  // Normalize to [0, 1] range
-  double max_theoretical_curl = (M_PI * 2.0 * 3.5) + 1.8;
-  curl = std::min(curl / max_theoretical_curl, 1.0);
-
-  // Apply non-linear scaling for better sensitivity
-  curl = std::pow(curl, 0.6);
-
-  return curl;
+  // Clamp percentage to valid range
+  return std::min(1.0, std::max(0.0, percentage));
 }
 
 void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs::msg::Pose>& landmarks)
 {
-  if (landmarks.size() < 21)
-  {
-    return;
-  }
-
   // Calculate curl (bend) for each finger
-  double thumb_curl = calculate_finger_curl(landmarks, THUMB_CMC_IDX, 4);
-  double index_curl = calculate_finger_curl(landmarks, INDEX_MCP_IDX, 4);
-  double middle_curl = calculate_finger_curl(landmarks, MIDDLE_MCP_IDX, 4);
-  double ring_curl = calculate_finger_curl(landmarks, RING_MCP_IDX, 4);
-  double pinky_curl = calculate_finger_curl(landmarks, PINKY_MCP_IDX, 4);
+  double thumb_yaw_curl = calculate_finger_curl(landmarks, "thumb_yaw");
+  double thumb_pitch_curl = calculate_finger_curl(landmarks, "thumb_pitch");
+  double index_curl = calculate_finger_curl(landmarks, "index");
+  double middle_curl = calculate_finger_curl(landmarks, "middle");
+  double ring_curl = calculate_finger_curl(landmarks, "ring");
+  double pinky_curl = calculate_finger_curl(landmarks, "pinky");
 
-  // Lower threshold for more sensitive detection of fist state
-  const double CLOSED_THRESHOLD = 0.58;
+  // Set positions for fingers
+  set_finger_position("thumb", "yaw", thumb_yaw_curl);
+  set_finger_position("thumb", "pitch", thumb_pitch_curl);
+  set_finger_positions("index", index_curl);
+  set_finger_positions("middle", middle_curl);
+  set_finger_positions("ring", ring_curl);
+  set_finger_positions("pinky", pinky_curl);
 
-  // Apply an amplification factor to finger curls (except thumb)
-  index_curl = std::min(index_curl * 1.3, 1.0);
-  middle_curl = std::min(middle_curl * 1.3, 1.0);
-  ring_curl = std::min(ring_curl * 1.3, 1.0);
-  pinky_curl = std::min(pinky_curl * 1.3, 1.0);
-
-  // Apply threshold to finger curls
-  if (index_curl > CLOSED_THRESHOLD)
-    index_curl = 1.0;
-  if (middle_curl > CLOSED_THRESHOLD)
-    middle_curl = 1.0;
-  if (ring_curl > CLOSED_THRESHOLD)
-    ring_curl = 1.0;
-  if (pinky_curl > CLOSED_THRESHOLD)
-    pinky_curl = 1.0;
-
-  // Detect fist gesture
-  bool is_fist = (index_curl > CLOSED_THRESHOLD && middle_curl > CLOSED_THRESHOLD && ring_curl > CLOSED_THRESHOLD &&
-                  pinky_curl > CLOSED_THRESHOLD);
-
-  // If fingers are close to a fist but not quite there, enhance the curl values
-  bool near_fist = (index_curl > 0.4 && middle_curl > 0.4 && ring_curl > 0.4 && pinky_curl > 0.4);
-  if (near_fist && !is_fist)
-  {
-    index_curl = std::min(index_curl + 0.2, 1.0);
-    middle_curl = std::min(middle_curl + 0.2, 1.0);
-    ring_curl = std::min(ring_curl + 0.2, 1.0);
-    pinky_curl = std::min(pinky_curl + 0.2, 1.0);
-  }
-
-  // When a fist is detected, ensure all fingers are fully closed
-  if (is_fist)
-  {
-    index_curl = 1.0;
-    middle_curl = 1.0;
-    ring_curl = 1.0;
-    pinky_curl = 1.0;
-    thumb_curl = std::max(thumb_curl, 0.9);
-  }
-
-  // Calculate thumb opposition
-  double thumb_oppose = 0.0;
-  if (landmarks.size() >= static_cast<size_t>(THUMB_TIP_IDX + 1))
-  {
-    // Calculate the thumb opposition using the position relative to the index MCP
-    double dx = landmarks[THUMB_TIP_IDX].position.x - landmarks[INDEX_MCP_IDX].position.x;
-    double dy = landmarks[THUMB_TIP_IDX].position.y - landmarks[INDEX_MCP_IDX].position.y;
-
-    // Normalize by hand size
-    double hand_size = std::sqrt(std::pow(landmarks[MIDDLE_MCP_IDX].position.x - landmarks[WRIST_IDX].position.x, 2) +
-                                 std::pow(landmarks[MIDDLE_MCP_IDX].position.y - landmarks[WRIST_IDX].position.y, 2));
-
-    if (hand_size > 0)
-    {
-      double raw_oppose = std::sqrt(dx * dx + dy * dy) / hand_size;
-      // Map the raw opposition to a range that works well for the thumb
-      thumb_oppose = std::max(0.0, std::min(1.0 - (raw_oppose * 0.5), 1.0));
-    }
-  }
-
-  // Thumb processing - both curl and opposition
-  if (finger_joints_.count("thumb") > 0)
-  {
-    // Amplify thumb curl to make it more responsive
-    thumb_curl = std::min(thumb_curl * 1.5, 1.0);
-
-    // Set thumb yaw (side-to-side movement)
-    if (finger_joints_["thumb"].count("yaw") > 0)
-    {
-      for (const auto& joint : finger_joints_["thumb"]["yaw"])
-      {
-        joint_positions_[joint] = joint_limits_[joint] * thumb_oppose;
-      }
-    }
-
-    // Set thumb pitch (bending movement)
-    if (finger_joints_["thumb"].count("pitch") > 0)
-    {
-      for (const auto& joint : finger_joints_["thumb"]["pitch"])
-      {
-        joint_positions_[joint] = joint_limits_[joint] * thumb_curl;
-      }
-    }
-
-    // Set thumb flex joints if they exist
-    if (finger_joints_["thumb"].count("flex") > 0)
-    {
-      for (const auto& joint : finger_joints_["thumb"]["flex"])
-      {
-        joint_positions_[joint] = joint_limits_[joint] * thumb_curl;
-      }
-    }
-  }
-
-  // Set positions for other fingers with scaling for stronger bending
-  if (finger_joints_.count("index") > 0)
-  {
-    set_finger_positions("index", index_curl);
-    // Apply extra bending to proximal joints
-    for (const auto& role_entry : finger_joints_["index"])
-    {
-      for (const auto& joint_name : role_entry.second)
-      {
-        if (joint_name.find("proximal") != std::string::npos)
-        {
-          double current_value = joint_positions_[joint_name];
-          joint_positions_[joint_name] = std::min(current_value * 1.15, joint_limits_[joint_name]);
-        }
-      }
-    }
-  }
-
-  // Apply same pattern to middle, ring, and pinky fingers
-  if (finger_joints_.count("middle") > 0)
-  {
-    set_finger_positions("middle", middle_curl);
-    for (const auto& role_entry : finger_joints_["middle"])
-    {
-      for (const auto& joint_name : role_entry.second)
-      {
-        if (joint_name.find("proximal") != std::string::npos)
-        {
-          double current_value = joint_positions_[joint_name];
-          joint_positions_[joint_name] = std::min(current_value * 1.15, joint_limits_[joint_name]);
-        }
-      }
-    }
-  }
-
-  if (finger_joints_.count("ring") > 0)
-  {
-    set_finger_positions("ring", ring_curl);
-    for (const auto& role_entry : finger_joints_["ring"])
-    {
-      for (const auto& joint_name : role_entry.second)
-      {
-        if (joint_name.find("proximal") != std::string::npos)
-        {
-          double current_value = joint_positions_[joint_name];
-          joint_positions_[joint_name] = std::min(current_value * 1.15, joint_limits_[joint_name]);
-        }
-      }
-    }
-  }
-
-  if (finger_joints_.count("pinky") > 0)
-  {
-    set_finger_positions("pinky", pinky_curl);
-    for (const auto& role_entry : finger_joints_["pinky"])
-    {
-      for (const auto& joint_name : role_entry.second)
-      {
-        if (joint_name.find("proximal") != std::string::npos)
-        {
-          double current_value = joint_positions_[joint_name];
-          joint_positions_[joint_name] = std::min(current_value * 1.15, joint_limits_[joint_name]);
-        }
-      }
-    }
-  }
-
-  // Apply extra palm closing for fist gesture
-  if (is_fist)
-  {
-    for (const auto& joint_entry : joint_configs_)
-    {
-      const auto& config = joint_entry.second;
-      if (config.role == "palm" || config.role == "closure" || config.name.find("palm") != std::string::npos ||
-          config.name.find("close") != std::string::npos)
-      {
-        joint_positions_[config.name] = joint_limits_[config.name];
-      }
-    }
-  }
+  RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                       "Thumb Yaw: %.2f, Thumb Pitch: %.2f, Index: %.2f, Middle: %.2f, Ring: %.2f, Pinky: %.2f",
+                       thumb_yaw_curl, thumb_pitch_curl, index_curl, middle_curl, ring_curl, pinky_curl);
 }
 
 }  // namespace arm_hand_control
