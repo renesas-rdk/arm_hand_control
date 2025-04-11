@@ -195,29 +195,27 @@ void HandLandmarkInterpreter::reset_joint_positions()
   }
 }
 
-double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry_msgs::msg::Pose>& landmarks,
-                                                      const std::string& finger)
+std::tuple<double, double> HandLandmarkInterpreter::calculate_finger_curl(
+    const std::vector<geometry_msgs::msg::Pose>& landmarks, const std::string& finger)
 {
   // Struct to define parameters for finger angle calculation
   struct finger_angle_config
   {
-    int tip_idx;               // landmark index of fingertip
-    int mid_idx;               // landmark index of middle joint
-    int base_idx;              // landmark index of base joint
-    double offset;             // angle offset
-    double scale;              // scaling factor
-    double additional_offset;  // additional offset for thumb
-    double max_angle;          // maximum angle (for percentage normalization)
+    int tip_idx;          // landmark index of fingertip
+    int mid_idx;          // landmark index of middle joint
+    int base_idx;         // landmark index of base joint
+    double observed_min;  // observed minimum angle
+    double observed_max;  // observed maximum angle
   };
 
   // Map fingers to their landmark configuration for angle calculation
   static const std::map<std::string, finger_angle_config> finger_configs = {
-    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
-    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
-    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
-    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, -20.0, 1.25, 0.0, 180.0 } },
-    { "thumb_pitch", { THUMB_TIP_IDX, THUMB_MCP_IDX, THUMB_CMC_IDX, -100.0, 1.25, -30.0, 180.0 } },
-    { "thumb_yaw", { THUMB_MCP_IDX, THUMB_CMC_IDX, INDEX_MCP_IDX, 0.0, 2.5, 70.0, 180.0 } }
+    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, 30, 180 } },
+    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, 15, 180 } },
+    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, 15, 180 } },
+    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, 15, 180 } },
+    { "thumb_pitch", { THUMB_TIP_IDX, THUMB_MCP_IDX, THUMB_CMC_IDX, 100, 175 } },
+    { "thumb_yaw", { THUMB_MCP_IDX, THUMB_CMC_IDX, INDEX_MCP_IDX, 15, 50 } }
   };
 
   const auto& config = finger_configs.at(finger);
@@ -236,7 +234,7 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
   // Prevent division by zero
   if (mag_tip_to_mid < 0.0001 || mag_base_to_mid < 0.0001)
   {
-    return 0.0;
+    return std::make_tuple(0.0, 0.0);
   }
 
   // Calculate angle between vectors
@@ -244,26 +242,26 @@ double HandLandmarkInterpreter::calculate_finger_curl(const std::vector<geometry
   double cosine_theta = std::min(1.0, std::max(-1.0, dot_product / (mag_tip_to_mid * mag_base_to_mid)));
   double angle_degrees = std::acos(cosine_theta) * 180.0 / M_PI;
 
-  // Apply the scaling and offset from the original algorithm
-  double raw_angle = (angle_degrees + config.offset) * config.scale;
+  // Clamp angle to observed range
+  double clamped_degrees = std::max(config.observed_min, std::min(config.observed_max, angle_degrees));
 
-  // Convert to percentage (0.0 to 1.0)
+  // Convert angle to percentage
   // For straight finger, angle is large; for curled finger, angle is small
-  double percentage = 1.0 - (raw_angle / config.max_angle);
+  double percentage = (clamped_degrees - config.observed_min) / (config.observed_max - config.observed_min);
+  percentage = 1.0 - percentage;  // Invert percentage for curl
 
-  // Clamp percentage to valid range
-  return std::min(1.0, std::max(0.0, percentage));
+  return std::make_tuple(percentage, angle_degrees);
 }
 
 void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs::msg::Pose>& landmarks)
 {
-  // Calculate curl (bend) for each finger
-  double thumb_yaw_curl = calculate_finger_curl(landmarks, "thumb_yaw");
-  double thumb_pitch_curl = calculate_finger_curl(landmarks, "thumb_pitch");
-  double index_curl = calculate_finger_curl(landmarks, "index");
-  double middle_curl = calculate_finger_curl(landmarks, "middle");
-  double ring_curl = calculate_finger_curl(landmarks, "ring");
-  double pinky_curl = calculate_finger_curl(landmarks, "pinky");
+  // Calculate curl (bend) for each finger with angle data
+  auto [thumb_yaw_curl, thumb_yaw_angle] = calculate_finger_curl(landmarks, "thumb_yaw");
+  auto [thumb_pitch_curl, thumb_pitch_angle] = calculate_finger_curl(landmarks, "thumb_pitch");
+  auto [index_curl, index_angle] = calculate_finger_curl(landmarks, "index");
+  auto [middle_curl, middle_angle] = calculate_finger_curl(landmarks, "middle");
+  auto [ring_curl, ring_angle] = calculate_finger_curl(landmarks, "ring");
+  auto [pinky_curl, pinky_angle] = calculate_finger_curl(landmarks, "pinky");
 
   // Set positions for fingers
   set_finger_position("thumb", "yaw", thumb_yaw_curl);
@@ -273,9 +271,11 @@ void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs:
   set_finger_positions("ring", ring_curl);
   set_finger_positions("pinky", pinky_curl);
 
-  RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                       "Thumb Yaw: %.2f, Thumb Pitch: %.2f, Index: %.2f, Middle: %.2f, Ring: %.2f, Pinky: %.2f",
-                       thumb_yaw_curl, thumb_pitch_curl, index_curl, middle_curl, ring_curl, pinky_curl);
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                       "Thumb Yaw: %.2f (%.2f°), Thumb Pitch: %.2f (%.2f°), "
+                       "Index: %.2f (%.2f°), Middle: %.2f (%.2f°), Ring: %.2f (%.2f°), Pinky: %.2f (%.2f°)",
+                       thumb_yaw_curl, thumb_yaw_angle, thumb_pitch_curl, thumb_pitch_angle, index_curl, index_angle,
+                       middle_curl, middle_angle, ring_curl, ring_angle, pinky_curl, pinky_angle);
 }
 
 }  // namespace arm_hand_control

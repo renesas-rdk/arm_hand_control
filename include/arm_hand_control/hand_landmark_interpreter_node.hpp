@@ -3,6 +3,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <tuple>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
@@ -11,7 +12,6 @@
 namespace arm_hand_control
 {
 
-// Struct to represent joint configuration
 struct JointConfig
 {
   std::string name;
@@ -29,8 +29,6 @@ public:
 
 private:
   void load_configuration();
-
-  // Callback functions
   void landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg);
   void publish_joint_states();
 
@@ -43,9 +41,10 @@ private:
 
   // Landmark interpretation functions
   void process_landmarks(const std::vector<geometry_msgs::msg::Pose>& landmarks);
-  double calculate_finger_curl(const std::vector<geometry_msgs::msg::Pose>& landmarks, const std::string& finger);
+  std::tuple<double, double> calculate_finger_curl(const std::vector<geometry_msgs::msg::Pose>& landmarks,
+                                                   const std::string& finger);
 
-  // Subscribers, publishers, and timers
+  // Subscribers, publishers
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
 
