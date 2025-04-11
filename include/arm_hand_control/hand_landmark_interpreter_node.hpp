@@ -50,6 +50,7 @@ private:
 
   // Configuration data
   std::string config_file_path_;
+  float curl_smooth_factor_;
 
   // Joint data structures
   std::vector<std::string> joint_names_;
@@ -57,6 +58,9 @@ private:
   std::map<std::string, double> joint_limits_;
   std::map<std::string, JointConfig> joint_configs_;
   std::map<std::string, std::map<std::string, std::vector<std::string>>> finger_joints_;
+
+  // EMA smoothing storage for finger curl values
+  std::map<std::string, double> prev_finger_curls_;
 
   // Constants for landmark indices (MediaPipe hand landmark model)
   const int HAND_LANDMARK_COUNT = 21;

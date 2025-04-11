@@ -10,9 +10,11 @@ HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpr
 {
   // Declare parameters
   this->declare_parameter("config_file", "config/hand/inspire_rh56.yaml");
+  this->declare_parameter("curl_smooth_factor", 0.7f);
 
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
+  curl_smooth_factor_ = this->get_parameter("curl_smooth_factor").as_double();
 
   // Load configuration
   load_configuration();
@@ -28,6 +30,7 @@ HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpr
   joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
 
   RCLCPP_INFO(this->get_logger(), "Hand landmark interpreter started");
+  RCLCPP_INFO(this->get_logger(), "Using curl smoothing factor: %.2f", curl_smooth_factor_);
 }
 
 HandLandmarkInterpreter::~HandLandmarkInterpreter()
@@ -210,10 +213,10 @@ std::tuple<double, double> HandLandmarkInterpreter::calculate_finger_curl(
 
   // Map fingers to their landmark configuration for angle calculation
   static const std::map<std::string, finger_angle_config> finger_configs = {
-    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, 30, 180 } },
-    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, 15, 180 } },
-    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, 15, 180 } },
-    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, 15, 180 } },
+    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, 50, 170 } },
+    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, 30, 170 } },
+    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, 30, 170 } },
+    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, 30, 170 } },
     { "thumb_pitch", { THUMB_TIP_IDX, THUMB_MCP_IDX, THUMB_CMC_IDX, 100, 175 } },
     { "thumb_yaw", { THUMB_MCP_IDX, THUMB_CMC_IDX, INDEX_MCP_IDX, 15, 50 } }
   };
@@ -247,10 +250,20 @@ std::tuple<double, double> HandLandmarkInterpreter::calculate_finger_curl(
 
   // Convert angle to percentage
   // For straight finger, angle is large; for curled finger, angle is small
-  double percentage = (clamped_degrees - config.observed_min) / (config.observed_max - config.observed_min);
-  percentage = 1.0 - percentage;  // Invert percentage for curl
+  double raw_percentage = (clamped_degrees - config.observed_min) / (config.observed_max - config.observed_min);
+  raw_percentage = 1.0 - raw_percentage;  // Invert percentage for curl
 
-  return std::make_tuple(percentage, angle_degrees);
+  // Apply exponential moving average (EMA) smoothing if we have previous data
+  auto prev_it = prev_finger_curls_.find(finger);
+  if (prev_it != prev_finger_curls_.end())
+  {
+    raw_percentage = curl_smooth_factor_ * prev_it->second + (1.0 - curl_smooth_factor_) * raw_percentage;
+  }
+
+  // Store the smoothed value for next frame
+  prev_finger_curls_[finger] = raw_percentage;
+
+  return std::make_tuple(raw_percentage, angle_degrees);
 }
 
 void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs::msg::Pose>& landmarks)
