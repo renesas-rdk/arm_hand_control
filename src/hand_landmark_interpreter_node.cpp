@@ -213,12 +213,12 @@ std::tuple<double, double> HandLandmarkInterpreter::calculate_finger_curl(
 
   // Map fingers to their landmark configuration for angle calculation
   static const std::map<std::string, finger_angle_config> finger_configs = {
-    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, 50, 170 } },
-    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, 30, 170 } },
-    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, 30, 170 } },
-    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, 30, 170 } },
-    { "thumb_pitch", { THUMB_TIP_IDX, THUMB_MCP_IDX, THUMB_CMC_IDX, 100, 175 } },
-    { "thumb_yaw", { THUMB_MCP_IDX, THUMB_CMC_IDX, INDEX_MCP_IDX, 15, 50 } }
+    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, 60, 170 } },
+    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, 40, 170 } },
+    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, 40, 170 } },
+    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, 40, 170 } },
+    { "thumb_pitch", { THUMB_TIP_IDX, THUMB_MCP_IDX, THUMB_CMC_IDX, 110, 170 } },
+    { "thumb_yaw", { THUMB_MCP_IDX, THUMB_CMC_IDX, INDEX_MCP_IDX, 25, 50 } }
   };
 
   const auto& config = finger_configs.at(finger);
@@ -248,22 +248,28 @@ std::tuple<double, double> HandLandmarkInterpreter::calculate_finger_curl(
   // Clamp angle to observed range
   double clamped_degrees = std::max(config.observed_min, std::min(config.observed_max, angle_degrees));
 
-  // Convert angle to percentage
-  // For straight finger, angle is large; for curled finger, angle is small
+  // Convert angle to percentage - original linear mapping
   double raw_percentage = (clamped_degrees - config.observed_min) / (config.observed_max - config.observed_min);
   raw_percentage = 1.0 - raw_percentage;  // Invert percentage for curl
+
+  // Apply non-linear transformation to reduce sensitivity
+  // Using a power function where power > 1 reduces sensitivity in lower values
+  // and power < 1 reduces sensitivity in higher values
+  double power = 2.0;  // Adjust this value to control sensitivity (higher = less sensitive)
+  double transformed_percentage = std::pow(raw_percentage, power);
 
   // Apply exponential moving average (EMA) smoothing if we have previous data
   auto prev_it = prev_finger_curls_.find(finger);
   if (prev_it != prev_finger_curls_.end())
   {
-    raw_percentage = curl_smooth_factor_ * prev_it->second + (1.0 - curl_smooth_factor_) * raw_percentage;
+    transformed_percentage =
+        curl_smooth_factor_ * prev_it->second + (1.0 - curl_smooth_factor_) * transformed_percentage;
   }
 
   // Store the smoothed value for next frame
-  prev_finger_curls_[finger] = raw_percentage;
+  prev_finger_curls_[finger] = transformed_percentage;
 
-  return std::make_tuple(raw_percentage, angle_degrees);
+  return std::make_tuple(transformed_percentage, angle_degrees);
 }
 
 void HandLandmarkInterpreter::process_landmarks(const std::vector<geometry_msgs::msg::Pose>& landmarks)
