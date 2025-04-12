@@ -20,11 +20,13 @@ InspireRH56DexhandNode::InspireRH56DexhandNode() : Node("inspire_rh56_dexhand_no
   declare_parameter("config_file", "config/hand/inspire_rh56.yaml");
   declare_parameter("serial_port", "/dev/ttyUSB0");
   declare_parameter("baudrate", 115200);
+  declare_parameter("command_threshold", 50);
 
   // Get parameters
   std::string config_file = get_parameter("config_file").as_string();
   std::string serial_port = get_parameter("serial_port").as_string();
   int baudrate = get_parameter("baudrate").as_int();
+  command_threshold_ = get_parameter("command_threshold").as_int();
 
   // Load joint configuration
   if (!load_joint_config(config_file))
@@ -57,8 +59,13 @@ InspireRH56DexhandNode::InspireRH56DexhandNode() : Node("inspire_rh56_dexhand_no
   joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       "joint_states", qos, std::bind(&InspireRH56DexhandNode::joint_state_callback, this, std::placeholders::_1));
 
+  // Initialize with -1 values
+  last_command_values_.resize(joints_.size(), -1);
+
   RCLCPP_INFO(this->get_logger(), "InspireRH56DexhandNode initialized with %ld joints", joints_.size());
   RCLCPP_INFO(this->get_logger(), "Listening for joint_states and sending commands to %s", serial_port.c_str());
+  RCLCPP_INFO(this->get_logger(), "Command threshold: %d/1000 (minimum change to send new commands)",
+              command_threshold_);
 }
 
 InspireRH56DexhandNode::~InspireRH56DexhandNode()
@@ -260,7 +267,18 @@ InspireRH56DexhandNode::convert_positions_to_commands(const std::map<std::string
     value = std::max(0, std::min(value, 1000));
     value = 1000 - value;  // Invert value for the command ANGLE_SET (See 2.4.11)
 
-    command_values[joint.command_index] = value;
+    // If the change is less than the threshold and we have a previous valid command,
+    // use -1 to tell the servo to keep its current position
+    if (last_command_values_[joint.command_index] != -1 &&
+        std::abs(value - last_command_values_[joint.command_index]) <= command_threshold_)
+    {
+      command_values[joint.command_index] = -1;  // No change needed
+    }
+    else
+    {
+      command_values[joint.command_index] = value;
+      last_command_values_[joint.command_index] = value;
+    }
   }
 
   return command_values;

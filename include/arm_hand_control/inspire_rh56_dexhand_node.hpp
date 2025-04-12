@@ -40,6 +40,9 @@ private:
 
   std::vector<JointInfo> joints_;
   int serial_port_ = -1;
+
+  std::vector<int> last_command_values_;
+  int command_threshold_;
 };
 
 }  // namespace arm_hand_control
