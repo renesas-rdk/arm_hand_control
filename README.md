@@ -21,19 +21,42 @@ Subscribes to string-based gesture commands and converts them into joint positio
   - `joint_states` (sensor_msgs/JointState) - Joint positions for the robotic hand
 
 Supported gestures:
-- grasp - Close all fingers
-- pinch - Pinch gesture with thumb and index finger
-- point - Extend index finger only
-- thumbs_up - Extend thumb, close other fingers
-- thumbs_down - Position thumb downward
-- ok - Form an "OK" gesture
-- rock - Extend index and pinky fingers
-- peace - Extend index and middle fingers
-- three_finger_grasp - Grasp with three fingers
-- call_me - Extend thumb and pinky
-- one, two, three, four, five - Numerical counting gestures
-- open_hand - Open all fingers
-- grasp_X - Grasp with percentage X (e.g., "grasp_0.5" for 50% closed)
+- **Basic hand gestures**:
+  - grasp - Close all fingers
+  - pinch - Pinch gesture with thumb and index finger
+  - three_finger_grasp - Grasp with three fingers
+  - open_hand - Open all fingers
+  - grasp_X - Grasp with percentage X (e.g., "grasp_0.5" for 50% closed)
+
+- **Counting gestures**:
+  - one - Extend index finger only
+  - two - Extend index and middle fingers
+  - three - Extend thumb, index, and middle fingers
+  - four - Extend all fingers except thumb
+  - five - Open all fingers
+
+- **Communication gestures**:
+  - point - Extend index finger only
+  - thumbs_up - Extend thumb, close other fingers
+  - thumbs_down - Position thumb downward
+  - ok - Form an "OK" gesture
+  - call_me - Extend thumb and pinky
+  - peace - Extend index and middle fingers
+  - wave - Wave gesture (parameter controlled)
+
+- **Fun/special gestures**:
+  - rock - Extend index and pinky fingers
+  - fist_bump - Closed fist with thumb positioned alongside
+  - gun - Extend index finger with thumb perpendicular
+  - spider_man - Extend thumb, index, and pinky
+  - hang_loose - Extend thumb, index, and pinky
+  - thumbs_middle - Extend middle finger with thumb to the side
+  - finger_cross - Cross fingers gesture
+  - italian_hand - Traditional Italian hand gesture
+
+- **Demo mode control**:
+  - demo_start - Start automated cycling through gestures
+  - demo_stop - Stop automated gesture cycling
 
 ### 2. Hand Landmark Interpreter (`hand_landmark_interpreter_node`)
 
@@ -115,6 +138,11 @@ ros2 topic pub /hand_gesture std_msgs/String "data: 'grasp'"
 Send a gesture with parameter:
 ```bash
 ros2 topic pub /hand_gesture std_msgs/String "data: 'grasp_0.5'"
+```
+
+Start demo mode to cycle through all gestures:
+```bash
+ros2 topic pub /hand_gesture std_msgs/String "data: 'demo_start'"
 ```
 
 ## Dependencies
