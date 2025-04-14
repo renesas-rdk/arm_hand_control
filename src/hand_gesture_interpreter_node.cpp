@@ -816,10 +816,10 @@ void HandGestureInterpreter::count_three()
   // Close all fingers first
   grasp(1.0);
 
-  // Extend thumb, index, and middle
-  set_finger_positions("thumb", 0.0);
+  // Extend index, middle and thumb
   set_finger_positions("index", 0.0);
   set_finger_positions("middle", 0.0);
+  set_finger_positions("ring", 0.0);
 }
 
 void HandGestureInterpreter::count_four()
