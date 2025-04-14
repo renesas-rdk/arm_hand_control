@@ -98,7 +98,6 @@ private:
   void gun();
   void spider_man();
   void hang_loose();
-  void thumbs_middle();
   void finger_cross();
   void italian_hand();
 };
