@@ -1,0 +1,13 @@
+# Goal
+string gesture_name
+float32 duration    # Duration to perform the gesture
+float32 percentage  # Optional percentage or intensity parameter
+
+---
+# Result
+bool success
+string message
+
+---
+# Feedback
+float32 percentage_complete  # Progress percentage (0.0-1.0)

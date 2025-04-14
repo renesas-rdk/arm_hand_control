@@ -1,22 +1,26 @@
 #include "arm_hand_control/hand_gesture_interpreter_node.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <filesystem>
+#include <functional>
+#include <thread>
+#include <chrono>
 
 namespace arm_hand_control
 {
 
-HandGestureInterpreter::HandGestureInterpreter()
-  : Node("hand_gesture_interpreter"), current_gesture_idx_(0), demo_gesture_in_progress_(false)
+HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interpreter")
 {
   // Declare parameters
   this->declare_parameter("config_file", "config/hand/inspire_rh56.yaml");
   this->declare_parameter("auto_demo_enabled", true);
   this->declare_parameter("gesture_duration", 3.0);
+  this->declare_parameter("transition_duration", 1.0);  // Default smooth transition time
 
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
   auto_demo_enabled_ = this->get_parameter("auto_demo_enabled").as_bool();
   gesture_duration_ = this->get_parameter("gesture_duration").as_double();
+  transition_duration_ = this->get_parameter("transition_duration").as_double();
 
   // Make the path absolute if it's relative
   if (!std::filesystem::path(config_file_path_).is_absolute())
@@ -32,19 +36,28 @@ HandGestureInterpreter::HandGestureInterpreter()
   auto qos = rclcpp::QoS(1).reliable().durability_volatile();
   joint_state_publisher_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
 
-  // Create subscriber
+  // Create subscriber (keep for backward compatibility)
   gesture_subscriber_ = this->create_subscription<std_msgs::msg::String>(
       "hand_gesture", qos, std::bind(&HandGestureInterpreter::gesture_callback, this, std::placeholders::_1));
+
+  // Create action server
+  using namespace std::placeholders;
+  action_server_ = rclcpp_action::create_server<ExecuteGesture>(
+      this, "execute_gesture", std::bind(&HandGestureInterpreter::handle_goal, this, _1, _2),
+      std::bind(&HandGestureInterpreter::handle_cancel, this, _1),
+      std::bind(&HandGestureInterpreter::handle_accepted, this, _1));
 
   // Publish initial joint states
   publish_joint_states();
 
   RCLCPP_INFO(this->get_logger(), "Hand gesture interpreter started");
   RCLCPP_INFO(this->get_logger(), "Listening for gestures on topic: %s", gesture_subscriber_->get_topic_name());
+  RCLCPP_INFO(this->get_logger(), "Gesture action server started: execute_gesture");
   RCLCPP_INFO(this->get_logger(), "Publishing joint states on topic: %s", joint_state_publisher_->get_topic_name());
   RCLCPP_INFO(this->get_logger(), "Using configuration file: %s", config_file_path_.c_str());
   RCLCPP_INFO(this->get_logger(), "Auto demo enabled: %s", auto_demo_enabled_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "Gesture duration: %.2f seconds", gesture_duration_);
+  RCLCPP_INFO(this->get_logger(), "Transition duration: %.2f seconds", transition_duration_);
   RCLCPP_INFO(this->get_logger(), "Available gestures: %zu", get_all_available_gestures().size());
   for (const auto& gesture : get_all_available_gestures())
   {
@@ -57,6 +70,99 @@ HandGestureInterpreter::HandGestureInterpreter()
     RCLCPP_INFO(this->get_logger(), "Auto demo mode enabled");
     start_demo_mode();
   }
+}
+
+//===== ACTION SERVER METHODS =====
+
+rclcpp_action::GoalResponse HandGestureInterpreter::handle_goal(const rclcpp_action::GoalUUID& uuid [[maybe_unused]],
+                                                                std::shared_ptr<const ExecuteGesture::Goal> goal)
+{
+  RCLCPP_INFO(this->get_logger(), "Received goal request for gesture: %s", goal->gesture_name.c_str());
+
+  // Check if the requested gesture is valid
+  auto available_gestures = get_all_available_gestures();
+  if (std::find(available_gestures.begin(), available_gestures.end(), goal->gesture_name) == available_gestures.end())
+  {
+    RCLCPP_WARN(this->get_logger(), "Unknown gesture: %s", goal->gesture_name.c_str());
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+
+  // Always accept valid gesture goals
+  return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+}
+
+rclcpp_action::CancelResponse
+HandGestureInterpreter::handle_cancel(const std::shared_ptr<GoalHandleExecuteGesture> goal_handle [[maybe_unused]])
+{
+  RCLCPP_INFO(this->get_logger(), "Received request to cancel gesture");
+
+  // Cancel the transition if one is in progress
+  if (transition_timer_)
+  {
+    transition_timer_->cancel();
+    transition_timer_.reset();
+    transition_in_progress_ = false;
+  }
+
+  return rclcpp_action::CancelResponse::ACCEPT;
+}
+
+void HandGestureInterpreter::handle_accepted(const std::shared_ptr<GoalHandleExecuteGesture> goal_handle)
+{
+  // Stop any running demo when accepting an action goal
+  if (demo_timer_)
+  {
+    stop_demo_mode();
+  }
+
+  // Execute the goal in a separate thread to avoid blocking the ROS executor
+  std::thread{ std::bind(&HandGestureInterpreter::execute_gesture_action, this, goal_handle) }.detach();
+}
+
+void HandGestureInterpreter::execute_gesture_action(const std::shared_ptr<GoalHandleExecuteGesture> goal_handle)
+{
+  // Get the goal
+  const auto goal = goal_handle->get_goal();
+  auto feedback = std::make_shared<ExecuteGesture::Feedback>();
+  auto result = std::make_shared<ExecuteGesture::Result>();
+
+  RCLCPP_INFO(this->get_logger(), "Executing gesture action: %s", goal->gesture_name.c_str());
+
+  // Store the goal handle for use in transition callbacks
+  current_goal_handle_ = goal_handle;
+
+  // Determine transition duration
+  double duration = goal->duration > 0.0 ? goal->duration : transition_duration_;
+
+  // Execute the gesture with the requested parameters
+  execute_gesture(goal->gesture_name, duration, goal->percentage);
+
+  // Wait for the transition to complete
+  while (transition_in_progress_ && rclcpp::ok() && !goal_handle->is_canceling())
+  {
+    // Update feedback
+    feedback->percentage_complete = transition_progress_;
+    goal_handle->publish_feedback(feedback);
+
+    // Sleep briefly to avoid busy-waiting
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  // Check if the goal was canceled
+  if (goal_handle->is_canceling())
+  {
+    result->success = false;
+    result->message = "Gesture execution was canceled";
+    goal_handle->canceled(result);
+    RCLCPP_INFO(this->get_logger(), "Gesture execution canceled");
+    return;
+  }
+
+  // Set the final result
+  result->success = true;
+  result->message = "Gesture executed successfully";
+  goal_handle->succeed(result);
+  RCLCPP_INFO(this->get_logger(), "Gesture execution completed successfully");
 }
 
 //===== DEMO MODE METHODS =====
@@ -107,15 +213,11 @@ void HandGestureInterpreter::demo_timer_callback()
   std::string current_gesture = gestures[current_gesture_idx_];
   RCLCPP_INFO(this->get_logger(), "Auto demo showing gesture: %s", current_gesture.c_str());
 
-  // Process the gesture
-  auto msg = std::make_shared<std_msgs::msg::String>();
-  msg->data = current_gesture;
-
   // Set a flag to indicate this is from the demo
-  // This prevents the gesture_callback from stopping the demo mode
   demo_gesture_in_progress_ = true;
 
-  gesture_callback(msg);
+  // Execute the gesture with the default transition duration
+  execute_gesture(current_gesture, transition_duration_);
 
   // Reset the flag
   demo_gesture_in_progress_ = false;
@@ -195,100 +297,55 @@ void HandGestureInterpreter::load_configuration()
   }
 }
 
-//===== FINGER ABSTRACTION METHODS =====
+//===== GESTURE TRANSITION METHODS =====
 
-void HandGestureInterpreter::set_finger_position(const std::string& finger, const std::string& role, double position)
+void HandGestureInterpreter::execute_gesture(const std::string& gesture, double duration, double percentage)
 {
-  auto finger_it = finger_joints_.find(finger);
-  if (finger_it != finger_joints_.end())
+  // Cancel any ongoing transition
+  if (transition_timer_)
   {
-    auto role_it = finger_it->second.find(role);
-    if (role_it != finger_it->second.end())
-    {
-      for (const auto& joint_name : role_it->second)
-      {
-        joint_positions_[joint_name] = position;
-      }
-    }
+    transition_timer_->cancel();
+    transition_timer_.reset();
+    transition_in_progress_ = false;
   }
+
+  // Prepare the target positions for the gesture
+  prepare_gesture_transition(gesture, percentage);
+
+  // Start the transition with the specified duration
+  double transition_time = (duration > 0.0) ? duration : transition_duration_;
+
+  // Make sure we're logging the actual duration being used
+  RCLCPP_INFO(this->get_logger(), "Executing gesture %s with duration: %.2f seconds", gesture.c_str(), transition_time);
+
+  start_gesture_transition(transition_time);
 }
 
-void HandGestureInterpreter::set_finger_positions(const std::string& finger, double percentage)
+void HandGestureInterpreter::prepare_gesture_transition(const std::string& gesture, double percentage)
 {
-  auto finger_it = finger_joints_.find(finger);
-  if (finger_it != finger_joints_.end())
-  {
-    for (const auto& role_entry : finger_it->second)
-    {
-      for (const auto& joint_name : role_entry.second)
-      {
-        joint_positions_[joint_name] = joint_limits_[joint_name] * percentage;
-      }
-    }
-  }
-}
+  // Store current positions as starting points
+  start_positions_ = joint_positions_;
 
-void HandGestureInterpreter::set_all_fingers_except(const std::vector<std::string>& exceptions, double percentage)
-{
-  for (const auto& finger_entry : finger_joints_)
-  {
-    if (std::find(exceptions.begin(), exceptions.end(), finger_entry.first) == exceptions.end())
-    {
-      set_finger_positions(finger_entry.first, percentage);
-    }
-  }
-}
+  // Create a copy of current positions for target
+  target_positions_ = joint_positions_;
 
-//===== CORE NODE METHODS =====
+  // Reset progress
+  transition_progress_ = 0.0;
 
-void HandGestureInterpreter::publish_joint_states()
-{
-  auto msg = sensor_msgs::msg::JointState();
-  msg.header.stamp = this->now();
+  // Compute target positions based on the requested gesture
+  // First reset positions to ensure clean state for gesture calculation
+  reset_joint_positions();
 
-  for (const auto& joint : joint_positions_)
-  {
-    msg.name.push_back(joint.first);
-    msg.position.push_back(joint.second);
-  }
-
-  joint_state_publisher_->publish(msg);
-}
-
-void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::SharedPtr msg)
-{
-  // Only stop the demo if we receive an external gesture command
-  // Don't stop if the gesture is coming from the demo itself
-  if (demo_timer_ && !demo_gesture_in_progress_ && msg->data != "demo_start" && msg->data != "demo_stop")
-  {
-    stop_demo_mode();
-  }
-
-  std::string gesture = msg->data;
-  RCLCPP_INFO(this->get_logger(), "Received gesture command: %s", gesture.c_str());
-
-  // Handle demo mode commands
-  if (gesture == "demo_start")
-  {
-    start_demo_mode();
-    return;
-  }
-  else if (gesture == "demo_stop")
-  {
-    stop_demo_mode();
-    return;
-  }
   // Special parameter gestures
-  else if (gesture.find("grasp_") == 0)
+  if (gesture.find("grasp_") == 0)
   {
-    // Parse grasp with percentage: "grasp_0.5"
     try
     {
       size_t pos = gesture.find_last_of('_');
       if (pos != std::string::npos)
       {
-        double percentage = std::stod(gesture.substr(pos + 1));
-        grasp(percentage);
+        double grasp_percentage = std::stod(gesture.substr(pos + 1));
+        grasp(grasp_percentage);
       }
     }
     catch (const std::exception& e)
@@ -299,15 +356,15 @@ void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::Share
   // Basic hand gestures
   else if (gesture == "grasp")
   {
-    grasp(1.0);
+    grasp(percentage > 0.0 ? percentage : 1.0);
   }
   else if (gesture == "pinch")
   {
-    pinch(1.0);
+    pinch(percentage > 0.0 ? percentage : 1.0);
   }
   else if (gesture == "three_finger_grasp")
   {
-    three_finger_grasp(0.6);
+    three_finger_grasp(percentage > 0.0 ? percentage : 0.6);
   }
   else if (gesture == "open_hand")
   {
@@ -389,8 +446,172 @@ void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::Share
     RCLCPP_WARN(this->get_logger(), "Unknown gesture: %s", gesture.c_str());
   }
 
-  // Publish joint states immediately after processing the gesture
+  // Save the calculated positions as target
+  target_positions_ = joint_positions_;
+
+  // Restore current positions for smooth transition
+  joint_positions_ = start_positions_;
+}
+
+void HandGestureInterpreter::start_gesture_transition(double duration)
+{
+  transition_in_progress_ = true;
+  transition_progress_ = 0.0;
+
+  // Store the requested duration
+  transition_duration_ = duration;
+
+  // Calculate update frequency (10 Hz should be smooth enough)
+  int update_frequency = 10;  // Hz
+  auto interval = std::chrono::milliseconds(static_cast<int>(1000.0 / update_frequency));
+
+  // Create a timer for smooth transition
+  transition_timer_ =
+      this->create_wall_timer(interval, std::bind(&HandGestureInterpreter::transition_timer_callback, this));
+
+  RCLCPP_INFO(this->get_logger(), "Starting gesture transition with duration: %.2f seconds", duration);
+}
+
+void HandGestureInterpreter::transition_timer_callback()
+{
+  if (!transition_in_progress_)
+  {
+    return;
+  }
+
+  // Update progress
+  transition_progress_ += 1.0 / (transition_duration_ * 10.0);  // 10 Hz update rate
+  if (transition_progress_ > 1.0)
+  {
+    transition_progress_ = 1.0;
+  }
+
+  // Use smooth easing function (ease in-out cubic)
+  double t = transition_progress_;
+  double factor;
+  if (t < 0.5)
+  {
+    factor = 4 * t * t * t;
+  }
+  else
+  {
+    factor = 1 - pow(-2 * t + 2, 3) / 2;
+  }
+
+  // Interpolate joint positions
+  for (const auto& joint : joint_names_)
+  {
+    double start = start_positions_[joint];
+    double target = target_positions_[joint];
+    joint_positions_[joint] = start + factor * (target - start);
+  }
+
+  // Publish the updated joint states
   publish_joint_states();
+
+  // Check if transition is complete
+  if (transition_progress_ >= 1.0)
+  {
+    finish_gesture_transition();
+  }
+}
+
+void HandGestureInterpreter::finish_gesture_transition()
+{
+  // Stop the transition timer
+  transition_timer_->cancel();
+  transition_timer_.reset();
+
+  // Ensure final positions are exactly the target positions
+  joint_positions_ = target_positions_;
+  publish_joint_states();
+
+  // Clear transition state
+  transition_in_progress_ = false;
+
+  RCLCPP_INFO(this->get_logger(), "Gesture transition completed");
+}
+
+//===== FINGER ABSTRACTION METHODS =====
+
+void HandGestureInterpreter::set_finger_position(const std::string& finger, const std::string& role, double position)
+{
+  auto finger_it = finger_joints_.find(finger);
+  if (finger_it != finger_joints_.end())
+  {
+    auto role_it = finger_it->second.find(role);
+    if (role_it != finger_it->second.end())
+    {
+      for (const auto& joint_name : role_it->second)
+      {
+        joint_positions_[joint_name] = position;
+      }
+    }
+  }
+}
+
+void HandGestureInterpreter::set_finger_positions(const std::string& finger, double percentage)
+{
+  auto finger_it = finger_joints_.find(finger);
+  if (finger_it != finger_joints_.end())
+  {
+    for (const auto& role_entry : finger_it->second)
+    {
+      for (const auto& joint_name : role_entry.second)
+      {
+        joint_positions_[joint_name] = joint_limits_[joint_name] * percentage;
+      }
+    }
+  }
+}
+
+void HandGestureInterpreter::set_all_fingers_except(const std::vector<std::string>& exceptions, double percentage)
+{
+  for (const auto& finger_entry : finger_joints_)
+  {
+    if (std::find(exceptions.begin(), exceptions.end(), finger_entry.first) == exceptions.end())
+    {
+      set_finger_positions(finger_entry.first, percentage);
+    }
+  }
+}
+
+//===== CORE NODE METHODS =====
+
+void HandGestureInterpreter::publish_joint_states()
+{
+  auto msg = sensor_msgs::msg::JointState();
+  msg.header.stamp = this->now();
+
+  for (const auto& joint : joint_positions_)
+  {
+    msg.name.push_back(joint.first);
+    msg.position.push_back(joint.second);
+  }
+
+  joint_state_publisher_->publish(msg);
+}
+
+void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::SharedPtr msg)
+{
+  // For backward compatibility, create an action goal
+  RCLCPP_INFO(this->get_logger(), "Received gesture command via topic: %s", msg->data.c_str());
+  RCLCPP_INFO(this->get_logger(), "Converting to action for smooth transition");
+
+  // Check for demo control commands
+  if (msg->data == "demo_start")
+  {
+    start_demo_mode();
+    return;
+  }
+  else if (msg->data == "demo_stop")
+  {
+    stop_demo_mode();
+    return;
+  }
+
+  // Execute the gesture with default transition duration
+  execute_gesture(msg->data, transition_duration_);
 }
 
 //===== JOINT CONTROL METHODS =====

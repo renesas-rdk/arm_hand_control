@@ -8,10 +8,20 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(action_msgs REQUIRED)
+
+# Generate ROS interfaces
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/ExecuteGesture.action"
+  DEPENDENCIES builtin_interfaces action_msgs
+)
 
 # Include directories
 include_directories(include)
@@ -20,10 +30,13 @@ include_directories(include)
 add_executable(hand_gesture_interpreter src/hand_gesture_interpreter_node.cpp)
 ament_target_dependencies(hand_gesture_interpreter
   rclcpp
+  rclcpp_action
   sensor_msgs
   std_msgs
   ament_index_cpp
 )
+rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+target_link_libraries(hand_gesture_interpreter "${cpp_typesupport_target}")
 target_link_libraries(hand_gesture_interpreter ${YAML_CPP_LIBRARIES})
 target_include_directories(hand_gesture_interpreter PUBLIC ${YAML_CPP_INCLUDE_DIRS})
 
@@ -49,11 +62,21 @@ ament_target_dependencies(inspire_rh56_dexhand
 target_link_libraries(inspire_rh56_dexhand ${YAML_CPP_LIBRARIES})
 target_include_directories(inspire_rh56_dexhand PUBLIC ${YAML_CPP_INCLUDE_DIRS})
 
+# Add the action client executable
+add_executable(gesture_action_client src/gesture_action_client.cpp)
+ament_target_dependencies(gesture_action_client
+  rclcpp
+  rclcpp_action
+)
+rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+target_link_libraries(gesture_action_client "${cpp_typesupport_target}")
+
 # Install executables
 install(TARGETS
   hand_gesture_interpreter
   hand_landmark_interpreter
   inspire_rh56_dexhand
+  gesture_action_client
   DESTINATION lib/${PROJECT_NAME}
 )
 
