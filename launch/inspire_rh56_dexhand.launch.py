@@ -29,7 +29,8 @@ def generate_launch_description():
             name='inspire_rh56_dexhand_node',
             parameters=[
                 {'config_file': config_file,
-                 'serial_port': serial_port}
+                 'serial_port': serial_port,
+                 'command_threshold': 20}
             ],
             output='screen'
         )
