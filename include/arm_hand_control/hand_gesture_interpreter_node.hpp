@@ -127,7 +127,6 @@ private:
   void fist_bump();
   void gun();
   void spider_man();
-  void hang_loose();
   void finger_cross();
   void italian_hand();
 };

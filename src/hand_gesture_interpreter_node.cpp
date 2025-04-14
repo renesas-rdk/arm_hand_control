@@ -200,7 +200,7 @@ std::vector<std::string> HandGestureInterpreter::get_all_available_gestures()
            "point", "thumbs_up", "ok", "peace", "call_me",
 
            // Fun/special gestures
-           "rock", "fist_bump", "gun", "spider_man", "hang_loose", "finger_cross", "italian_hand"
+           "rock", "fist_bump", "gun", "spider_man", "finger_cross", "italian_hand"
   };
 }
 
@@ -428,10 +428,6 @@ void HandGestureInterpreter::prepare_gesture_transition(const std::string& gestu
   else if (gesture == "spider_man")
   {
     spider_man();
-  }
-  else if (gesture == "hang_loose")
-  {
-    hang_loose();
   }
   else if (gesture == "finger_cross")
   {
@@ -897,18 +893,6 @@ void HandGestureInterpreter::spider_man()
   // Close ring and middle fingers
   set_finger_positions("ring", 1.0);
   set_finger_positions("middle", 1.0);
-
-  // Extend thumb, index, and pinky
-  set_finger_positions("thumb", 0.0);
-  set_finger_positions("index", 0.0);
-  set_finger_positions("pinky", 0.0);
-}
-
-void HandGestureInterpreter::hang_loose()
-{
-  // Close middle, ring fingers
-  set_finger_positions("middle", 1.0);
-  set_finger_positions("ring", 1.0);
 
   // Extend thumb, index, and pinky
   set_finger_positions("thumb", 0.0);
