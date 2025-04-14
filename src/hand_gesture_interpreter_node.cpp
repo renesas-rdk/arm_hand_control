@@ -191,7 +191,7 @@ void HandGestureInterpreter::stop_demo_mode()
 std::vector<std::string> HandGestureInterpreter::get_all_available_gestures()
 {
   return { // Basic hand gestures
-           "grasp", "pinch", "three_finger_grasp", "open_hand",
+           "open_hand", "pinch", "three_finger_grasp", "grasp",
 
            // Counting gestures
            "one", "two", "three", "four", "five",
