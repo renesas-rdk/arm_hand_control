@@ -24,7 +24,8 @@ def generate_launch_description():
         name='hand_landmark_interpreter',
         output='screen',
         parameters=[
-            {'config_file': LaunchConfiguration('config_file')}
+            {'config_file': LaunchConfiguration('config_file')},
+            {'curl_smooth_factor': 0.5}
         ],
         remappings=[
             ('hand_landmarks', '/hand_landmark_estimation/hand_landmarks')
