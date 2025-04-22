@@ -16,6 +16,10 @@ find_package(yaml-cpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(action_msgs REQUIRED)
+find_package(agilex_piper_controller REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
 
 # Generate ROS interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -62,6 +66,22 @@ ament_target_dependencies(inspire_rh56_dexhand
 target_link_libraries(inspire_rh56_dexhand ${YAML_CPP_LIBRARIES})
 target_include_directories(inspire_rh56_dexhand PUBLIC ${YAML_CPP_INCLUDE_DIRS})
 
+# Add the AgileX Piper arm executable
+add_executable(agilex_piper_arm src/agilex_piper_arm_node.cpp)
+ament_target_dependencies(agilex_piper_arm
+  rclcpp
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+  ament_index_cpp
+  agilex_piper_controller
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+)
+target_link_libraries(agilex_piper_arm ${YAML_CPP_LIBRARIES})
+target_include_directories(agilex_piper_arm PUBLIC ${YAML_CPP_INCLUDE_DIRS})
+
 # Add the action client executable
 add_executable(gesture_action_client src/gesture_action_client.cpp)
 ament_target_dependencies(gesture_action_client
@@ -76,6 +96,7 @@ install(TARGETS
   hand_gesture_interpreter
   hand_landmark_interpreter
   inspire_rh56_dexhand
+  agilex_piper_arm
   gesture_action_client
   DESTINATION lib/${PROJECT_NAME}
 )
