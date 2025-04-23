@@ -82,6 +82,18 @@ ament_target_dependencies(agilex_piper_arm
 target_link_libraries(agilex_piper_arm ${YAML_CPP_LIBRARIES})
 target_include_directories(agilex_piper_arm PUBLIC ${YAML_CPP_INCLUDE_DIRS})
 
+# Add the Piper teleop node executable
+add_executable(piper_teleop src/piper_teleop_node.cpp)
+ament_target_dependencies(piper_teleop
+  rclcpp
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+  tf2
+  tf2_geometry_msgs
+)
+target_include_directories(piper_teleop PUBLIC ${YAML_CPP_INCLUDE_DIRS})
+
 # Add the action client executable
 add_executable(gesture_action_client src/gesture_action_client.cpp)
 ament_target_dependencies(gesture_action_client
@@ -97,6 +109,7 @@ install(TARGETS
   hand_landmark_interpreter
   inspire_rh56_dexhand
   agilex_piper_arm
+  piper_teleop
   gesture_action_client
   DESTINATION lib/${PROJECT_NAME}
 )

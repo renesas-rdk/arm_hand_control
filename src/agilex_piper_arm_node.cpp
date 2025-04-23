@@ -86,13 +86,13 @@ void AgilexPiperArmNode::joint_command_callback(const sensor_msgs::msg::JointSta
     return;
   }
 
-  // Extract joint angles (in radians) and convert to controller format (0.001 rad)
-  int j1 = static_cast<int>(msg->position[0] * 1000.0);
-  int j2 = static_cast<int>(msg->position[1] * 1000.0);
-  int j3 = static_cast<int>(msg->position[2] * 1000.0);
-  int j4 = static_cast<int>(msg->position[3] * 1000.0);
-  int j5 = static_cast<int>(msg->position[4] * 1000.0);
-  int j6 = static_cast<int>(msg->position[5] * 1000.0);
+  // Extract joint angles (in radians) and convert to controller format (0.001 degrees)
+  int j1 = static_cast<int>(msg->position[0] * 180.0 / M_PI * 1000.0);
+  int j2 = static_cast<int>(msg->position[1] * 180.0 / M_PI * 1000.0);
+  int j3 = static_cast<int>(msg->position[2] * 180.0 / M_PI * 1000.0);
+  int j4 = static_cast<int>(msg->position[3] * 180.0 / M_PI * 1000.0);
+  int j5 = static_cast<int>(msg->position[4] * 180.0 / M_PI * 1000.0);
+  int j6 = static_cast<int>(msg->position[5] * 180.0 / M_PI * 1000.0);
 
   // Send joint command to controller
   if (!controller_->set_joint_angles(j1, j2, j3, j4, j5, j6))
@@ -191,13 +191,13 @@ void AgilexPiperArmNode::publish_joint_states()
   // Get the current joint angles from the controller
   agilex::piper::ArmJoint arm_joint = controller_->get_arm_joint();
 
-  // Convert from controller format (0.001 rad) to radians
-  joint_positions_[0] = arm_joint.j1 * 0.001;
-  joint_positions_[1] = arm_joint.j2 * 0.001;
-  joint_positions_[2] = arm_joint.j3 * 0.001;
-  joint_positions_[3] = arm_joint.j4 * 0.001;
-  joint_positions_[4] = arm_joint.j5 * 0.001;
-  joint_positions_[5] = arm_joint.j6 * 0.001;
+  // Convert from controller format (0.001 degree) to radians
+  joint_positions_[0] = arm_joint.j1 * 0.001 * M_PI / 180.0;
+  joint_positions_[1] = arm_joint.j2 * 0.001 * M_PI / 180.0;
+  joint_positions_[2] = arm_joint.j3 * 0.001 * M_PI / 180.0;
+  joint_positions_[3] = arm_joint.j4 * 0.001 * M_PI / 180.0;
+  joint_positions_[4] = arm_joint.j5 * 0.001 * M_PI / 180.0;
+  joint_positions_[5] = arm_joint.j6 * 0.001 * M_PI / 180.0;
 
   // Create and publish joint state message
   auto joint_state_msg = std::make_unique<sensor_msgs::msg::JointState>();
