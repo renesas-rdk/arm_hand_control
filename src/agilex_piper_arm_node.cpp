@@ -245,14 +245,14 @@ void AgilexPiperArmNode::publish_arm_status()
 
   // Create a string representation of the status
   std::ostringstream oss;
-  oss << "Mode: " << static_cast<int>(status.arm_mode) << ", ";
-  oss << "Work mode: " << static_cast<int>(status.arm_work_mode) << ", ";
-  oss << "Motor state: " << static_cast<int>(status.arm_motor_state) << ", ";
-  oss << "Error state: " << static_cast<int>(status.arm_err_state) << ", ";
-  oss << "Emergency stop: " << static_cast<int>(status.arm_emergency_stop_state) << ", ";
-  oss << "Teach state: " << static_cast<int>(status.arm_teach_state) << ", ";
-  oss << "Collision: " << static_cast<int>(status.arm_collision_state) << ", ";
-  oss << "Servo: " << static_cast<int>(status.arm_servo_state);
+  oss << "Control Mode: " << static_cast<int>(status.ctrl_mode) << ", ";
+  oss << "Arm Status: " << static_cast<int>(status.arm_status) << ", ";
+  oss << "Mode Feedback: " << static_cast<int>(status.mode_feed) << ", ";
+  oss << "Teach Status: " << static_cast<int>(status.teach_status) << ", ";
+  oss << "Motion Status: " << static_cast<int>(status.motion_status) << ", ";
+  oss << "Trajectory Number: " << static_cast<int>(status.trajectory_num) << ", ";
+  oss << "Communication Error: " << static_cast<int>(status.err_code_comm) << ", ";
+  oss << "Angle Error: " << static_cast<int>(status.err_code_angle);
 
   auto status_msg = std::make_unique<std_msgs::msg::String>();
   status_msg->data = oss.str();
@@ -260,7 +260,7 @@ void AgilexPiperArmNode::publish_arm_status()
   status_pub_->publish(std::move(status_msg));
 
   // Also log status if there's an error
-  if (status.arm_err_state != 0 || status.arm_emergency_stop_state != 0 || status.arm_collision_state != 0)
+  if (status.err_code_comm != 0 || status.err_code_angle != 0)
   {
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Arm status error: %s", oss.str().c_str());
   }
