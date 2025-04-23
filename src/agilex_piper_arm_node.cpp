@@ -157,14 +157,14 @@ void AgilexPiperArmNode::control_mode_callback(const std_msgs::msg::String::Shar
   else if (mode == "emergency_stop")
   {
     // Emergency stop
-    controller_->emergency_stop(0x01);  // 0x01 = emergency stop
+    controller_->motion_control_1(0x01);  // 0x01 = emergency stop
     RCLCPP_INFO(this->get_logger(), "Emergency stop activated");
   }
-  else if (mode == "reset_emergency")
+  else if (mode == "resume_emergency")
   {
-    // Reset emergency stop
-    controller_->emergency_stop(0x02);  // 0x02 = reset emergency stop
-    RCLCPP_INFO(this->get_logger(), "Emergency stop reset");
+    // Resume emergency stop
+    controller_->motion_control_1(0x02);  // 0x02 = resume emergency stop
+    RCLCPP_INFO(this->get_logger(), "Emergency stop resume");
   }
   else if (mode == "joint_mode")
   {
