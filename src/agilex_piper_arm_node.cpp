@@ -169,15 +169,15 @@ void AgilexPiperArmNode::control_mode_callback(const std_msgs::msg::String::Shar
   else if (mode == "joint_mode")
   {
     // Set to joint control mode
-    controller_->set_mode(0x01, 0x01, 50, 0x00);
-    // 0x01 = position control mode, 0x01 = joint mode, 50 = speed rate (50%), 0x00 = not MIT mode
+    controller_->set_mode(0x01, 0x01, 50);
+    // 0x01 = position control mode, 0x01 = joint mode, 50 = speed rate (50%)
     RCLCPP_INFO(this->get_logger(), "Set to joint control mode");
   }
   else if (mode == "cartesian_mode")
   {
     // Set to Cartesian control mode
-    controller_->set_mode(0x01, 0x00, 50, 0x00);
-    // 0x01 = position control mode, 0x00 = Cartesian mode, 50 = speed rate (50%), 0x00 = not MIT mode
+    controller_->set_mode(0x01, 0x00, 50);
+    // 0x01 = position control mode, 0x00 = Cartesian mode, 50 = speed rate (50%)
     RCLCPP_INFO(this->get_logger(), "Set to Cartesian control mode");
   }
   else
