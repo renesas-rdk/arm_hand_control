@@ -215,20 +215,21 @@ void AgilexPiperArmNode::update_callback()
 {
   if (!controller_ || !controller_->is_connected())
   {
-    static bool first_warning = true;
-    if (first_warning)
+    static bool connection_attempted = false;
+
+    if (!connection_attempted)
     {
       RCLCPP_WARN(this->get_logger(), "Controller not connected, attempting to connect and apply joint limits");
       if (controller_->connect_port())
       {
         RCLCPP_INFO(this->get_logger(), "Controller connected successfully");
         apply_joint_limits_to_sdk();
-        first_warning = false;
       }
       else
       {
-        RCLCPP_WARN(this->get_logger(), "Failed to connect to controller");
+        RCLCPP_WARN(this->get_logger(), "Failed to connect to controller. Will not retry automatically.");
       }
+      connection_attempted = true;  // Mark as attempted regardless of success or failure
     }
     else
     {
