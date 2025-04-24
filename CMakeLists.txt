@@ -89,9 +89,11 @@ ament_target_dependencies(piper_teleop
   sensor_msgs
   std_msgs
   geometry_msgs
+  ament_index_cpp
   tf2
   tf2_geometry_msgs
 )
+target_link_libraries(piper_teleop ${YAML_CPP_LIBRARIES})
 target_include_directories(piper_teleop PUBLIC ${YAML_CPP_INCLUDE_DIRS})
 
 # Add the action client executable
