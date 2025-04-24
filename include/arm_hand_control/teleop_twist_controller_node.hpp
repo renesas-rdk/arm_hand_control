@@ -13,10 +13,10 @@ namespace arm_hand_control
 static const std::string CONTROL_MODE_CARTESIAN = "cartesian_mode";
 static const std::string CONTROL_MODE_JOINT = "joint_mode";
 
-class PiperTeleopNode : public rclcpp::Node
+class TeleopTwistControllerNode : public rclcpp::Node
 {
 public:
-  explicit PiperTeleopNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+  explicit TeleopTwistControllerNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
 private:
   // Callbacks

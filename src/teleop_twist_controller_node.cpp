@@ -17,13 +17,13 @@
 #include <yaml-cpp/yaml.h>
 
 // Project includes
-#include "arm_hand_control/piper_teleop_node.hpp"
+#include "arm_hand_control/teleop_twist_controller_node.hpp"
 
 namespace arm_hand_control
 {
 
-PiperTeleopNode::PiperTeleopNode(const rclcpp::NodeOptions& options)
-  : Node("piper_teleop_node", options), have_pose_(false), have_joints_(false)
+TeleopTwistControllerNode::TeleopTwistControllerNode(const rclcpp::NodeOptions& options)
+  : Node("teleop_twist_controller_node", options), have_pose_(false), have_joints_(false)
 {
   // Declare and get parameters
   this->declare_parameter("control_mode", CONTROL_MODE_JOINT);
@@ -40,35 +40,35 @@ PiperTeleopNode::PiperTeleopNode(const rclcpp::NodeOptions& options)
 
   // Set up parameter callback
   param_callback_handle_ = this->add_on_set_parameters_callback(
-      std::bind(&PiperTeleopNode::parameter_callback, this, std::placeholders::_1));
+      std::bind(&TeleopTwistControllerNode::parameter_callback, this, std::placeholders::_1));
 
   // Initialize joints from configuration file
   load_joint_config(config_file);
 
   // Create subscribers
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
-      "piper/cmd_vel", 10, std::bind(&PiperTeleopNode::twist_callback, this, std::placeholders::_1));
+      "cmd_vel", 10, std::bind(&TeleopTwistControllerNode::twist_callback, this, std::placeholders::_1));
 
   pose_sub_ = this->create_subscription<geometry_msgs::msg::Pose>(
-      "piper/end_pose", 10, std::bind(&PiperTeleopNode::pose_callback, this, std::placeholders::_1));
+      "end_pose", 10, std::bind(&TeleopTwistControllerNode::pose_callback, this, std::placeholders::_1));
 
   joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-      "joint_states", 10, std::bind(&PiperTeleopNode::joint_state_callback, this, std::placeholders::_1));
+      "joint_states", 10, std::bind(&TeleopTwistControllerNode::joint_state_callback, this, std::placeholders::_1));
 
   // Create publishers
-  pose_cmd_pub_ = this->create_publisher<geometry_msgs::msg::Pose>("piper/pose_command", 10);
-  joint_cmd_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("piper/joint_command", 10);
-  control_mode_pub_ = this->create_publisher<std_msgs::msg::String>("piper/control_mode", 10);
+  pose_cmd_pub_ = this->create_publisher<geometry_msgs::msg::Pose>("pose_command", 10);
+  joint_cmd_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_command", 10);
+  control_mode_pub_ = this->create_publisher<std_msgs::msg::String>("control_mode", 10);
 
   // Set initial control mode
   set_control_mode(control_mode_);
 
-  RCLCPP_INFO(this->get_logger(), "Piper teleop node initialized in %s mode", control_mode_.c_str());
+  RCLCPP_INFO(this->get_logger(), "Teleop twist controller node initialized in %s mode", control_mode_.c_str());
   RCLCPP_INFO(this->get_logger(), "Linear scale: %.2f, Angular scale: %.2f, Joint vel scale: %.2f", linear_scale_,
               angular_scale_, joint_vel_scale_);
 }
 
-void PiperTeleopNode::load_joint_config(const std::string& config_file_name)
+void TeleopTwistControllerNode::load_joint_config(const std::string& config_file_name)
 {
   try
   {
@@ -130,7 +130,7 @@ void PiperTeleopNode::load_joint_config(const std::string& config_file_name)
   }
 }
 
-void PiperTeleopNode::twist_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+void TeleopTwistControllerNode::twist_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   if (control_mode_ == CONTROL_MODE_CARTESIAN && have_pose_)
   {
@@ -190,13 +190,13 @@ void PiperTeleopNode::twist_callback(const geometry_msgs::msg::Twist::SharedPtr 
   }
 }
 
-void PiperTeleopNode::pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg)
+void TeleopTwistControllerNode::pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg)
 {
   current_pose_ = *msg;
   have_pose_ = true;
 }
 
-void PiperTeleopNode::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+void TeleopTwistControllerNode::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
 {
   // Check if we have all the joints we need
   if (msg->name.size() >= 6 && msg->position.size() >= 6)
@@ -237,7 +237,7 @@ void PiperTeleopNode::joint_state_callback(const sensor_msgs::msg::JointState::S
   }
 }
 
-void PiperTeleopNode::set_control_mode(const std::string& mode)
+void TeleopTwistControllerNode::set_control_mode(const std::string& mode)
 {
   auto msg = std::make_unique<std_msgs::msg::String>();
   msg->data = mode;
@@ -247,14 +247,14 @@ void PiperTeleopNode::set_control_mode(const std::string& mode)
   RCLCPP_INFO(this->get_logger(), "Control mode set to: %s", mode.c_str());
 }
 
-void PiperTeleopNode::publish_pose_command(const geometry_msgs::msg::Pose& pose)
+void TeleopTwistControllerNode::publish_pose_command(const geometry_msgs::msg::Pose& pose)
 {
   auto msg = std::make_unique<geometry_msgs::msg::Pose>();
   *msg = pose;
   pose_cmd_pub_->publish(std::move(msg));
 }
 
-void PiperTeleopNode::publish_joint_command(const sensor_msgs::msg::JointState& joint_state)
+void TeleopTwistControllerNode::publish_joint_command(const sensor_msgs::msg::JointState& joint_state)
 {
   auto msg = std::make_unique<sensor_msgs::msg::JointState>();
   msg->header.stamp = this->now();
@@ -264,7 +264,7 @@ void PiperTeleopNode::publish_joint_command(const sensor_msgs::msg::JointState& 
 }
 
 rcl_interfaces::msg::SetParametersResult
-PiperTeleopNode::parameter_callback(const std::vector<rclcpp::Parameter>& parameters)
+TeleopTwistControllerNode::parameter_callback(const std::vector<rclcpp::Parameter>& parameters)
 {
   rcl_interfaces::msg::SetParametersResult result;
   result.successful = true;
@@ -311,7 +311,7 @@ PiperTeleopNode::parameter_callback(const std::vector<rclcpp::Parameter>& parame
 int main(int argc, char* argv[])
 {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<arm_hand_control::PiperTeleopNode>(rclcpp::NodeOptions());
+  auto node = std::make_shared<arm_hand_control::TeleopTwistControllerNode>(rclcpp::NodeOptions());
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
