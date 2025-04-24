@@ -17,8 +17,6 @@ public:
   // Control mode constants
   static constexpr const char* CONTROL_MODE_JOINT = "joint_mode";
   static constexpr const char* CONTROL_MODE_CARTESIAN = "cartesian_mode";
-  static constexpr const char* CONTROL_MODE_ENABLE = "enable";
-  static constexpr const char* CONTROL_MODE_DISABLE = "disable";
 
   PiperTeleopNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
   ~PiperTeleopNode() = default;
@@ -50,6 +48,10 @@ private:
   void twist_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg);
   void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
+
+  // Parameter callback
+  rcl_interfaces::msg::SetParametersResult parameter_callback(const std::vector<rclcpp::Parameter>& parameters);
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
   // Helper methods
   void set_control_mode(const std::string& mode);

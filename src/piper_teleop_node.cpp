@@ -19,23 +19,23 @@
 namespace arm_hand_control
 {
 
-// Constant definitions for control modes
-const std::string CONTROL_MODE_CARTESIAN = "cartesian_mode";
-const std::string CONTROL_MODE_JOINT = "joint_mode";
-
 PiperTeleopNode::PiperTeleopNode(const rclcpp::NodeOptions& options)
   : Node("piper_teleop_node", options), have_pose_(false), have_joints_(false)
 {
   // Declare and get parameters
-  this->declare_parameter("control_mode", CONTROL_MODE_CARTESIAN);
-  this->declare_parameter("linear_scale", 0.1);      // m per unit twist
-  this->declare_parameter("angular_scale", 0.1);     // rad per unit twist
-  this->declare_parameter("joint_vel_scale", 0.05);  // rad per unit twist for joints
+  this->declare_parameter("control_mode", CONTROL_MODE_JOINT);
+  this->declare_parameter("linear_scale", 0.01);      // m per unit twist
+  this->declare_parameter("angular_scale", 0.01);     // rad per unit twist
+  this->declare_parameter("joint_vel_scale", 0.01);  // rad per unit twist for joints
 
   control_mode_ = this->get_parameter("control_mode").as_string();
   linear_scale_ = this->get_parameter("linear_scale").as_double();
   angular_scale_ = this->get_parameter("angular_scale").as_double();
   joint_vel_scale_ = this->get_parameter("joint_vel_scale").as_double();
+
+  // Set up parameter callback
+  param_callback_handle_ = this->add_on_set_parameters_callback(
+      std::bind(&PiperTeleopNode::parameter_callback, this, std::placeholders::_1));
 
   // Initialize current_joints_
   current_joints_.name = { "joint1", "joint2", "joint3", "joint4", "joint5", "joint6" };
@@ -195,6 +195,48 @@ void PiperTeleopNode::publish_joint_command(const sensor_msgs::msg::JointState& 
   msg->name = joint_state.name;
   msg->position = joint_state.position;
   joint_cmd_pub_->publish(std::move(msg));
+}
+
+rcl_interfaces::msg::SetParametersResult
+PiperTeleopNode::parameter_callback(const std::vector<rclcpp::Parameter>& parameters)
+{
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+  result.reason = "success";
+
+  for (const auto& param : parameters)
+  {
+    if (param.get_name() == "control_mode")
+    {
+      std::string new_mode = param.as_string();
+      if (new_mode == CONTROL_MODE_CARTESIAN || new_mode == CONTROL_MODE_JOINT)
+      {
+        set_control_mode(new_mode);
+      }
+      else
+      {
+        result.successful = false;
+        result.reason = "Invalid control mode. Use 'cartesian_mode' or 'joint_mode'";
+      }
+    }
+    else if (param.get_name() == "linear_scale")
+    {
+      linear_scale_ = param.as_double();
+      RCLCPP_INFO(this->get_logger(), "Updated linear scale to: %.2f", linear_scale_);
+    }
+    else if (param.get_name() == "angular_scale")
+    {
+      angular_scale_ = param.as_double();
+      RCLCPP_INFO(this->get_logger(), "Updated angular scale to: %.2f", angular_scale_);
+    }
+    else if (param.get_name() == "joint_vel_scale")
+    {
+      joint_vel_scale_ = param.as_double();
+      RCLCPP_INFO(this->get_logger(), "Updated joint velocity scale to: %.2f", joint_vel_scale_);
+    }
+  }
+
+  return result;
 }
 
 }  // namespace arm_hand_control
