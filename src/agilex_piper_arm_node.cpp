@@ -136,6 +136,7 @@ AgilexPiperArmNode::~AgilexPiperArmNode()
   // Ensure controller is properly shut down
   if (controller_)
   {
+    controller_->disable_arm();
     controller_->disconnect();
   }
   RCLCPP_INFO(this->get_logger(), "Piper controller node shutdown");
@@ -316,14 +317,12 @@ void AgilexPiperArmNode::control_mode_callback(const std_msgs::msg::String::Shar
 
   if (mode == "enable")
   {
-    // Enable all joints
-    controller_->enable_arm(0x07);  // 0x07 = all joints
+    controller_->enable_arm();
     RCLCPP_INFO(this->get_logger(), "Enabled all joints");
   }
   else if (mode == "disable")
   {
-    // Disable all joints
-    controller_->disable_arm(0x07);  // 0x07 = all joints
+    controller_->disable_arm();
     RCLCPP_INFO(this->get_logger(), "Disabled all joints");
   }
   else if (mode == "emergency_stop")
