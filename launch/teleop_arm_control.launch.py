@@ -73,7 +73,7 @@ def generate_launch_description():
         remappings=[
             ('cmd_vel', '/arm/cmd_vel'),             # Input twist commands
             ('joint_states', '/joint_states'),       # Input joint state feedback
-            ('end_pose', '/arm/end_pose'),           # Input end effector pose
+            ('current_pose', '/arm/current_pose'),   # Input current end effector pose
             ('pose_command', '/arm/pose_command'),   # Output pose commands
             ('joint_command', '/arm/joint_command'), # Output joint commands
             ('control_mode', '/arm/control_mode'),   # Output control mode
@@ -95,7 +95,7 @@ def generate_launch_description():
             ('piper/joint_command', '/arm/joint_command'),  # Input joint commands
             ('piper/control_mode', '/arm/control_mode'),    # Input control mode
             ('joint_states', '/joint_states'),              # Output joint state
-            ('piper/end_pose', '/arm/end_pose'),            # Output end effector pose
+            ('piper/current_pose', '/arm/current_pose'),    # Output current end effector pose
             ('piper/status', '/arm/status')                 # Output arm status
         ]
     )

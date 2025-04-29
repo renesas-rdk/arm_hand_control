@@ -3,7 +3,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-#include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <map>
 
 #include "agilex_piper_controller/piper_controller.hpp"
@@ -40,12 +40,12 @@ private:
 
   // Publishers
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
-  rclcpp::Publisher<geometry_msgs::msg::Pose>::SharedPtr pose_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
 
   // Subscribers
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_cmd_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::Pose>::SharedPtr pose_cmd_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr control_mode_sub_;
 
   // Timers
@@ -58,7 +58,7 @@ private:
   // Callbacks
   void update_callback();
   void joint_command_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
-  void pose_command_callback(const geometry_msgs::msg::Pose::SharedPtr msg);
+  void pose_command_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void control_mode_callback(const std_msgs::msg::String::SharedPtr msg);
 
   // Configuration methods

@@ -7,7 +7,7 @@
 
 // ROS2 includes
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -49,14 +49,14 @@ TeleopTwistControllerNode::TeleopTwistControllerNode(const rclcpp::NodeOptions& 
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
       "cmd_vel", 10, std::bind(&TeleopTwistControllerNode::twist_callback, this, std::placeholders::_1));
 
-  pose_sub_ = this->create_subscription<geometry_msgs::msg::Pose>(
-      "end_pose", 10, std::bind(&TeleopTwistControllerNode::pose_callback, this, std::placeholders::_1));
+  pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+      "current_pose", 10, std::bind(&TeleopTwistControllerNode::pose_callback, this, std::placeholders::_1));
 
   joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
       "joint_states", 10, std::bind(&TeleopTwistControllerNode::joint_state_callback, this, std::placeholders::_1));
 
   // Create publishers
-  pose_cmd_pub_ = this->create_publisher<geometry_msgs::msg::Pose>("pose_command", 10);
+  pose_cmd_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_command", 10);
   joint_cmd_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_command", 10);
   control_mode_pub_ = this->create_publisher<std_msgs::msg::String>("control_mode", 10);
 
@@ -135,16 +135,16 @@ void TeleopTwistControllerNode::twist_callback(const geometry_msgs::msg::Twist::
   if (control_mode_ == CONTROL_MODE_CARTESIAN && have_pose_)
   {
     // Cartesian mode - use current pose as starting point and modify based on twist
-    geometry_msgs::msg::Pose new_pose = current_pose_;
+    geometry_msgs::msg::PoseStamped new_pose = current_pose_;
 
     // Apply linear velocities
-    new_pose.position.x += msg->linear.x * linear_scale_;
-    new_pose.position.y += msg->linear.y * linear_scale_;
-    new_pose.position.z += msg->linear.z * linear_scale_;
+    new_pose.pose.position.x += msg->linear.x * linear_scale_;
+    new_pose.pose.position.y += msg->linear.y * linear_scale_;
+    new_pose.pose.position.z += msg->linear.z * linear_scale_;
 
     // Convert current orientation to RPY
-    tf2::Quaternion q(current_pose_.orientation.x, current_pose_.orientation.y, current_pose_.orientation.z,
-                      current_pose_.orientation.w);
+    tf2::Quaternion q(current_pose_.pose.orientation.x, current_pose_.pose.orientation.y,
+                      current_pose_.pose.orientation.z, current_pose_.pose.orientation.w);
 
     tf2::Matrix3x3 m(q);
     double roll, pitch, yaw;
@@ -157,10 +157,14 @@ void TeleopTwistControllerNode::twist_callback(const geometry_msgs::msg::Twist::
 
     // Convert back to quaternion
     q.setRPY(roll, pitch, yaw);
-    new_pose.orientation.x = q.x();
-    new_pose.orientation.y = q.y();
-    new_pose.orientation.z = q.z();
-    new_pose.orientation.w = q.w();
+    new_pose.pose.orientation.x = q.x();
+    new_pose.pose.orientation.y = q.y();
+    new_pose.pose.orientation.z = q.z();
+    new_pose.pose.orientation.w = q.w();
+
+    // Update timestamp
+    new_pose.header.stamp = this->now();
+    new_pose.header.frame_id = current_pose_.header.frame_id.empty() ? "base_link" : current_pose_.header.frame_id;
 
     publish_pose_command(new_pose);
   }
@@ -190,7 +194,7 @@ void TeleopTwistControllerNode::twist_callback(const geometry_msgs::msg::Twist::
   }
 }
 
-void TeleopTwistControllerNode::pose_callback(const geometry_msgs::msg::Pose::SharedPtr msg)
+void TeleopTwistControllerNode::pose_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
   current_pose_ = *msg;
   have_pose_ = true;
@@ -247,10 +251,21 @@ void TeleopTwistControllerNode::set_control_mode(const std::string& mode)
   RCLCPP_INFO(this->get_logger(), "Control mode set to: %s", mode.c_str());
 }
 
-void TeleopTwistControllerNode::publish_pose_command(const geometry_msgs::msg::Pose& pose)
+void TeleopTwistControllerNode::publish_pose_command(const geometry_msgs::msg::PoseStamped& pose)
 {
-  auto msg = std::make_unique<geometry_msgs::msg::Pose>();
+  auto msg = std::make_unique<geometry_msgs::msg::PoseStamped>();
   *msg = pose;
+
+  // Ensure the message has a valid timestamp and frame id
+  if (msg->header.stamp == rclcpp::Time(0))
+  {
+    msg->header.stamp = this->now();
+  }
+  if (msg->header.frame_id.empty())
+  {
+    msg->header.frame_id = "base_link";
+  }
+
   pose_cmd_pub_->publish(std::move(msg));
 }
 

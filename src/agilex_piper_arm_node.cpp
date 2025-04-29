@@ -92,13 +92,13 @@ void AgilexPiperArmNode::setup_publishers_and_subscribers()
 {
   // Create publishers
   joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
-  pose_pub_ = this->create_publisher<geometry_msgs::msg::Pose>("piper/end_pose", 10);
+  pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("piper/current_pose", 10);
   status_pub_ = this->create_publisher<std_msgs::msg::String>("piper/status", 10);
 
   // Create subscribers
   joint_cmd_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
       "piper/joint_command", 10, std::bind(&AgilexPiperArmNode::joint_command_callback, this, std::placeholders::_1));
-  pose_cmd_sub_ = this->create_subscription<geometry_msgs::msg::Pose>(
+  pose_cmd_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
       "piper/pose_command", 10, std::bind(&AgilexPiperArmNode::pose_command_callback, this, std::placeholders::_1));
   control_mode_sub_ = this->create_subscription<std_msgs::msg::String>(
       "piper/control_mode", 10, std::bind(&AgilexPiperArmNode::control_mode_callback, this, std::placeholders::_1));
@@ -274,7 +274,7 @@ void AgilexPiperArmNode::joint_command_callback(const sensor_msgs::msg::JointSta
   }
 }
 
-void AgilexPiperArmNode::pose_command_callback(const geometry_msgs::msg::Pose::SharedPtr msg)
+void AgilexPiperArmNode::pose_command_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
   if (!controller_ || !controller_->is_connected())
   {
@@ -283,12 +283,12 @@ void AgilexPiperArmNode::pose_command_callback(const geometry_msgs::msg::Pose::S
   }
 
   // Extract position in meters and convert to controller format (0.001 mm)
-  int x = static_cast<int>(msg->position.x * 1000000.0);
-  int y = static_cast<int>(msg->position.y * 1000000.0);
-  int z = static_cast<int>(msg->position.z * 1000000.0);
+  int x = static_cast<int>(msg->pose.position.x * 1000000.0);
+  int y = static_cast<int>(msg->pose.position.y * 1000000.0);
+  int z = static_cast<int>(msg->pose.position.z * 1000000.0);
 
   // Convert quaternion orientation to Euler angles (roll, pitch, yaw) in degrees * 1000
-  tf2::Quaternion q(msg->orientation.x, msg->orientation.y, msg->orientation.z, msg->orientation.w);
+  tf2::Quaternion q(msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w);
   tf2::Matrix3x3 m(q);
   double roll, pitch, yaw;
   m.getRPY(roll, pitch, yaw);
@@ -384,13 +384,17 @@ void AgilexPiperArmNode::publish_end_pose()
   // Get the current end pose from the controller
   agilex::piper::ArmEndPose end_pose = controller_->get_arm_end_pose();
 
-  // Convert from controller format to ROS format
-  auto pose_msg = std::make_unique<geometry_msgs::msg::Pose>();
+  // Create a new PoseStamped message
+  auto pose_msg = std::make_unique<geometry_msgs::msg::PoseStamped>();
+
+  // Set header
+  pose_msg->header.stamp = this->now();
+  pose_msg->header.frame_id = "base_link";  // Set appropriate frame ID
 
   // Position: convert from 0.001 mm to meters
-  pose_msg->position.x = end_pose.x * 0.000001;
-  pose_msg->position.y = end_pose.y * 0.000001;
-  pose_msg->position.z = end_pose.z * 0.000001;
+  pose_msg->pose.position.x = end_pose.x * 0.000001;
+  pose_msg->pose.position.y = end_pose.y * 0.000001;
+  pose_msg->pose.position.z = end_pose.z * 0.000001;
 
   // Orientation: convert from degrees*1000 to quaternion
   double roll = end_pose.rx * 0.001 * M_PI / 180.0;   // Convert to radians
@@ -401,10 +405,10 @@ void AgilexPiperArmNode::publish_end_pose()
   q.setRPY(roll, pitch, yaw);
   q.normalize();
 
-  pose_msg->orientation.x = q.x();
-  pose_msg->orientation.y = q.y();
-  pose_msg->orientation.z = q.z();
-  pose_msg->orientation.w = q.w();
+  pose_msg->pose.orientation.x = q.x();
+  pose_msg->pose.orientation.y = q.y();
+  pose_msg->pose.orientation.z = q.z();
+  pose_msg->pose.orientation.w = q.w();
 
   pose_pub_->publish(std::move(pose_msg));
 }
