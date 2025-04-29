@@ -1,9 +1,8 @@
 // Standard includes
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
-#include <fstream>
 
 // ROS2 includes
 #include <rclcpp/rclcpp.hpp>
@@ -14,7 +13,6 @@
 #include <trajectory_msgs/msg/joint_trajectory_point.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
-#include <ament_index_cpp/get_package_share_directory.hpp>
 
 // Project includes
 #include "arm_hand_control/teleop_twist_controller_node.hpp"
@@ -69,7 +67,7 @@ void TeleopTwistControllerNode::pose_twist_callback(const geometry_msgs::msg::Tw
     return;
   }
 
-  // Cartesian mode - use current pose as starting point and modify based on twist
+  // Use current pose as starting point and modify based on twist
   geometry_msgs::msg::PoseStamped new_pose = current_pose_;
 
   // Apply linear velocities
@@ -97,7 +95,7 @@ void TeleopTwistControllerNode::pose_twist_callback(const geometry_msgs::msg::Tw
   new_pose.pose.orientation.z = q.z();
   new_pose.pose.orientation.w = q.w();
 
-  // Update timestamp
+  // Update timestamp and frame_id
   new_pose.header.stamp = this->now();
   new_pose.header.frame_id = current_pose_.header.frame_id.empty() ? "base_link" : current_pose_.header.frame_id;
 
@@ -113,24 +111,37 @@ void TeleopTwistControllerNode::joint_twist_callback(const geometry_msgs::msg::T
     return;
   }
 
-  // Joint mode - use twist to directly control joint positions
+  // Use twist to directly control joint positions
   sensor_msgs::msg::JointState new_joints = current_joints_;
 
-  // Map twist components to joint changes (this is a simplified mapping)
+  // Map twist components to joint changes
   if (new_joints.position.size() >= 6)
   {
-    new_joints.position[0] += msg->angular.z * joint_vel_scale_;  // base rotation from angular z
-    new_joints.position[1] += msg->linear.z * joint_vel_scale_;   // shoulder from linear z
-    new_joints.position[2] += msg->linear.y * joint_vel_scale_;   // elbow from linear y
-    new_joints.position[3] += msg->linear.x * joint_vel_scale_;   // wrist1 from linear x
-    new_joints.position[4] += msg->angular.y * joint_vel_scale_;  // wrist2 from angular y
-    new_joints.position[5] += msg->angular.x * joint_vel_scale_;  // wrist3 from angular x
+    // Standard 6-DOF robot arm mapping:
+    // Base joint (joint 0) - controlled by angular z (rotating the base)
+    new_joints.position[0] += msg->angular.z * joint_vel_scale_;
+
+    // Shoulder joint (joint 1) - controlled by linear z (up/down movement)
+    new_joints.position[1] += msg->linear.z * joint_vel_scale_;
+
+    // Elbow joint (joint 2) - controlled by linear y (forward/backward movement)
+    new_joints.position[2] += msg->linear.y * joint_vel_scale_;
+
+    // First wrist joint (joint 3) - controlled by linear x (side to side movement)
+    new_joints.position[3] += msg->linear.x * joint_vel_scale_;
+
+    // Second wrist joint (joint 4) - controlled by angular y (pitch)
+    new_joints.position[4] += msg->angular.y * joint_vel_scale_;
+
+    // Third wrist joint (joint 5) - controlled by angular x (roll)
+    new_joints.position[5] += msg->angular.x * joint_vel_scale_;
 
     publish_joint_command(new_joints);
   }
   else
   {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Insufficient joint information available");
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                         "Insufficient joint information available, need at least 6 joints");
   }
 }
 
@@ -184,8 +195,8 @@ void TeleopTwistControllerNode::publish_joint_command(const sensor_msgs::msg::Jo
     point.velocities = joint_state.velocity;
   }
 
-  // Add time from start
-  point.time_from_start = rclcpp::Duration::from_seconds(0.5);  // Half second execution time
+  // Add time from start (half second execution time)
+  point.time_from_start = rclcpp::Duration::from_seconds(0.5);
 
   // Add the point to the trajectory
   msg->points.push_back(point);

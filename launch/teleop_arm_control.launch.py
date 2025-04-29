@@ -29,25 +29,25 @@ def generate_launch_description():
     declare_linear_scale = DeclareLaunchArgument(
         'linear_scale',
         default_value='0.01',
-        description='Linear scale for twist commands'
+        description='Linear scale factor for cartesian position control (m per unit twist)'
     )
 
     declare_angular_scale = DeclareLaunchArgument(
         'angular_scale',
         default_value='0.01',
-        description='Angular scale for twist commands'
+        description='Angular scale factor for cartesian orientation control (rad per unit twist)'
     )
 
     declare_joint_vel_scale = DeclareLaunchArgument(
         'joint_vel_scale',
         default_value='0.01',
-        description='Joint velocity scale for twist commands'
+        description='Joint velocity scale factor for joint position control (rad per unit twist)'
     )
 
     declare_can_interface = DeclareLaunchArgument(
         'can_interface',
         default_value='can0',
-        description='CAN interface to use for the arm'
+        description='CAN interface to use for the arm controller'
     )
 
     # Create teleop controller node
@@ -62,16 +62,19 @@ def generate_launch_description():
             'joint_vel_scale': joint_vel_scale
         }],
         remappings=[
-            ('pose/cmd_vel', '/arm/pose/cmd_vel'),    # Input pose twist commands
-            ('joint/cmd_vel', '/arm/joint/cmd_vel'),  # Input joint twist commands
-            ('joint_states', '/joint_states'),        # Input joint state feedback
-            ('current_pose', '/arm/current_pose'),    # Input current end effector pose
-            ('pose_command', '/arm/pose_command'),    # Output pose commands
-            ('joint_command', '/arm/joint_command'),  # Output joint commands
+            # Input topics
+            ('pose/cmd_vel', '/arm/pose/cmd_vel'),      # Pose twist commands
+            ('joint/cmd_vel', '/arm/joint/cmd_vel'),    # Joint twist commands
+            ('joint_states', '/joint_states'),          # Joint state feedback
+            ('current_pose', '/arm/current_pose'),      # Current end effector pose
+
+            # Output topics
+            ('pose_command', '/arm/pose_command'),      # Pose commands
+            ('joint_command', '/arm/joint_command'),    # Joint commands
         ]
     )
 
-    # Create arm node
+    # Create arm controller node
     arm_node = Node(
         package='arm_hand_control',
         executable='agilex_piper_arm',
@@ -82,20 +85,26 @@ def generate_launch_description():
             'can_interface': can_interface
         }],
         remappings=[
-            ('piper/pose_command', '/arm/pose_command'),    # Input pose commands
-            ('piper/joint_command', '/arm/joint_command'),  # Input joint commands
-            ('joint_states', '/joint_states'),              # Output joint state
-            ('piper/current_pose', '/arm/current_pose'),    # Output current end effector pose
-            ('piper/status', '/arm/status')                 # Output arm status
+            # Input command topics
+            ('piper/pose_command', '/arm/pose_command'),      # Pose commands
+            ('piper/joint_command', '/arm/joint_command'),    # Joint commands
+
+            # Output feedback topics
+            ('joint_states', '/joint_states'),                # Joint state
+            ('piper/current_pose', '/arm/current_pose'),      # Current end effector pose
+            ('piper/status', '/arm/status')                   # Arm status
         ]
     )
 
     return LaunchDescription([
+        # Launch arguments
         declare_arm_config,
         declare_linear_scale,
         declare_angular_scale,
         declare_joint_vel_scale,
         declare_can_interface,
+
+        # Nodes
         teleop_node,
         arm_node
     ])

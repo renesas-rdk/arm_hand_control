@@ -9,6 +9,26 @@
 namespace arm_hand_control
 {
 
+/**
+ * TeleopTwistControllerNode handles twist commands for both pose and joint control
+ *
+ * The node provides two separate control streams:
+ *
+ * Subscribed topics:
+ *   - pose/cmd_vel (geometry_msgs/Twist): Controls end effector position and orientation
+ *   - joint/cmd_vel (geometry_msgs/Twist): Controls individual joint positions
+ *   - current_pose (geometry_msgs/PoseStamped): Current end effector pose
+ *   - joint_states (sensor_msgs/JointState): Current joint states
+ *
+ * Published topics:
+ *   - pose_command (geometry_msgs/PoseStamped): Commanded pose for the arm
+ *   - joint_command (trajectory_msgs/JointTrajectory): Commanded joint positions
+ *
+ * Parameters:
+ *   - linear_scale (double): Scale factor for linear velocity (m per unit twist)
+ *   - angular_scale (double): Scale factor for angular velocity (rad per unit twist)
+ *   - joint_vel_scale (double): Scale factor for joint velocity (rad per unit twist)
+ */
 class TeleopTwistControllerNode : public rclcpp::Node
 {
 public:
@@ -39,14 +59,16 @@ private:
   // Parameter callback handle
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
+  // Parameters
+  double linear_scale_;     // Scale factor for linear velocity (m per unit twist)
+  double angular_scale_;    // Scale factor for angular velocity (rad per unit twist)
+  double joint_vel_scale_;  // Scale factor for joint velocity (rad per unit twist)
+
   // State
-  double linear_scale_;
-  double angular_scale_;
-  double joint_vel_scale_;
   geometry_msgs::msg::PoseStamped current_pose_;
   sensor_msgs::msg::JointState current_joints_;
-  bool have_pose_;
-  bool have_joints_;
+  bool have_pose_;    // Flag indicating if we have received pose data
+  bool have_joints_;  // Flag indicating if we have received joint data
 };
 
 }  // namespace arm_hand_control
