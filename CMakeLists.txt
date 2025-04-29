@@ -114,12 +114,6 @@ ament_target_dependencies(teleop_twist_controller
   tf2
   tf2_geometry_msgs
 )
-target_link_libraries(teleop_twist_controller
-  ${YAML_CPP_LIBRARIES}
-)
-target_include_directories(teleop_twist_controller PUBLIC
-  ${YAML_CPP_INCLUDE_DIRS}
-)
 
 # Gesture Action Client
 add_executable(gesture_action_client src/gesture_action_client.cpp)

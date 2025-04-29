@@ -16,7 +16,6 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
-#include <yaml-cpp/yaml.h>
 
 // Project includes
 #include "arm_hand_control/teleop_twist_controller_node.hpp"
@@ -29,23 +28,18 @@ TeleopTwistControllerNode::TeleopTwistControllerNode(const rclcpp::NodeOptions& 
 {
   // Declare and get parameters
   this->declare_parameter("control_mode", CONTROL_MODE_JOINT);
-  this->declare_parameter("linear_scale", 0.01);                           // m per unit twist
-  this->declare_parameter("angular_scale", 0.01);                          // rad per unit twist
-  this->declare_parameter("joint_vel_scale", 0.01);                        // rad per unit twist for joints
-  this->declare_parameter("config_file", "config/arm/agilex_piper.yaml");  // Path to configuration file
+  this->declare_parameter("linear_scale", 0.01);     // m per unit twist
+  this->declare_parameter("angular_scale", 0.01);    // rad per unit twist
+  this->declare_parameter("joint_vel_scale", 0.01);  // rad per unit twist for joints
 
   control_mode_ = this->get_parameter("control_mode").as_string();
   linear_scale_ = this->get_parameter("linear_scale").as_double();
   angular_scale_ = this->get_parameter("angular_scale").as_double();
   joint_vel_scale_ = this->get_parameter("joint_vel_scale").as_double();
-  std::string config_file = this->get_parameter("config_file").as_string();
 
   // Set up parameter callback
   param_callback_handle_ = this->add_on_set_parameters_callback(
       std::bind(&TeleopTwistControllerNode::parameter_callback, this, std::placeholders::_1));
-
-  // Initialize joints from configuration file
-  load_joint_config(config_file);
 
   // Create subscribers
   twist_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
@@ -68,68 +62,6 @@ TeleopTwistControllerNode::TeleopTwistControllerNode(const rclcpp::NodeOptions& 
   RCLCPP_INFO(this->get_logger(), "Teleop twist controller node initialized in %s mode", control_mode_.c_str());
   RCLCPP_INFO(this->get_logger(), "Linear scale: %.2f, Angular scale: %.2f, Joint vel scale: %.2f", linear_scale_,
               angular_scale_, joint_vel_scale_);
-}
-
-void TeleopTwistControllerNode::load_joint_config(const std::string& config_file_name)
-{
-  try
-  {
-    std::string config_path;
-
-    // Check if the path is absolute
-    if (config_file_name[0] == '/')
-    {
-      config_path = config_file_name;
-    }
-    else
-    {
-      // If not, assume it's relative to the package share directory
-      config_path = ament_index_cpp::get_package_share_directory("arm_hand_control") + "/" + config_file_name;
-    }
-    RCLCPP_INFO(this->get_logger(), "Loading joint configuration from: %s", config_path.c_str());
-
-    // Load the YAML file
-    YAML::Node config = YAML::LoadFile(config_path);
-
-    if (!config["arm_config"] || !config["arm_config"]["joints"])
-    {
-      throw std::runtime_error("Missing arm_config or joints section in config file");
-    }
-
-    auto joints = config["arm_config"]["joints"];
-
-    // Clear existing joint data
-    current_joints_.name.clear();
-    current_joints_.position.clear();
-
-    // Populate joint names and default positions from the config
-    for (const auto& joint : joints)
-    {
-      if (joint["name"] && joint["default_position"])
-      {
-        current_joints_.name.push_back(joint["name"].as<std::string>());
-        current_joints_.position.push_back(joint["default_position"].as<double>());
-
-        RCLCPP_DEBUG(this->get_logger(), "Loaded joint: %s, default position: %.2f",
-                     joint["name"].as<std::string>().c_str(), joint["default_position"].as<double>());
-      }
-      else
-      {
-        RCLCPP_WARN(this->get_logger(), "Skipping joint with missing name or default position");
-      }
-    }
-
-    RCLCPP_INFO(this->get_logger(), "Successfully loaded %zu joints from configuration", current_joints_.name.size());
-  }
-  catch (const std::exception& e)
-  {
-    RCLCPP_ERROR(this->get_logger(), "Failed to load joint configuration: %s", e.what());
-
-    // Fallback to default joint configuration
-    RCLCPP_WARN(this->get_logger(), "Using default joint configuration");
-    current_joints_.name = { "joint1", "joint2", "joint3", "joint4", "joint5", "joint6" };
-    current_joints_.position = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-  }
 }
 
 void TeleopTwistControllerNode::twist_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -204,43 +136,8 @@ void TeleopTwistControllerNode::pose_callback(const geometry_msgs::msg::PoseStam
 
 void TeleopTwistControllerNode::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
 {
-  // Check if we have all the joints we need
-  if (msg->name.size() >= 6 && msg->position.size() >= 6)
-  {
-    // Find and map the right joints by name
-    std::vector<size_t> indices(6, std::string::npos);
-    for (size_t i = 0; i < msg->name.size(); ++i)
-    {
-      for (size_t j = 0; j < current_joints_.name.size(); ++j)
-      {
-        if (msg->name[i] == current_joints_.name[j])
-        {
-          indices[j] = i;
-          break;
-        }
-      }
-    }
-
-    // Update joint positions if all joints were found
-    bool all_joints_found = true;
-    for (const auto& idx : indices)
-    {
-      if (idx == std::string::npos)
-      {
-        all_joints_found = false;
-        break;
-      }
-    }
-
-    if (all_joints_found)
-    {
-      for (size_t i = 0; i < indices.size(); ++i)
-      {
-        current_joints_.position[i] = msg->position[indices[i]];
-      }
-      have_joints_ = true;
-    }
-  }
+  current_joints_ = *msg;
+  have_joints_ = true;
 }
 
 void TeleopTwistControllerNode::set_control_mode(const std::string& mode)

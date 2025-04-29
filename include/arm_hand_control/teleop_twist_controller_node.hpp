@@ -30,7 +30,6 @@ private:
   void set_control_mode(const std::string& mode);
   void publish_pose_command(const geometry_msgs::msg::PoseStamped& pose);
   void publish_joint_command(const sensor_msgs::msg::JointState& joint_state);
-  void load_joint_config(const std::string& config_file_name);
 
   // Subscribers
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr twist_sub_;

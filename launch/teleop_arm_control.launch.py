@@ -64,7 +64,6 @@ def generate_launch_description():
         name='teleop_twist_controller',
         output='screen',
         parameters=[{
-            'config_file': arm_config,
             'linear_scale': linear_scale,
             'angular_scale': angular_scale,
             'joint_vel_scale': joint_vel_scale,
