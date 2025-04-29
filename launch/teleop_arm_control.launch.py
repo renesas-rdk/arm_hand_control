@@ -17,7 +17,6 @@ def generate_launch_description():
     linear_scale = LaunchConfiguration('linear_scale')
     angular_scale = LaunchConfiguration('angular_scale')
     joint_vel_scale = LaunchConfiguration('joint_vel_scale')
-    control_mode = LaunchConfiguration('control_mode')
     can_interface = LaunchConfiguration('can_interface')
 
     # Declare launch arguments
@@ -45,12 +44,6 @@ def generate_launch_description():
         description='Joint velocity scale for twist commands'
     )
 
-    declare_control_mode = DeclareLaunchArgument(
-        'control_mode',
-        default_value='joint_mode',
-        description='Control mode (joint_mode or cartesian_mode)'
-    )
-
     declare_can_interface = DeclareLaunchArgument(
         'can_interface',
         default_value='can0',
@@ -66,16 +59,15 @@ def generate_launch_description():
         parameters=[{
             'linear_scale': linear_scale,
             'angular_scale': angular_scale,
-            'joint_vel_scale': joint_vel_scale,
-            'control_mode': control_mode
+            'joint_vel_scale': joint_vel_scale
         }],
         remappings=[
-            ('cmd_vel', '/arm/cmd_vel'),             # Input twist commands
-            ('joint_states', '/joint_states'),       # Input joint state feedback
-            ('current_pose', '/arm/current_pose'),   # Input current end effector pose
-            ('pose_command', '/arm/pose_command'),   # Output pose commands
-            ('joint_command', '/arm/joint_command'), # Output joint commands
-            ('control_mode', '/arm/control_mode'),   # Output control mode
+            ('pose/cmd_vel', '/arm/pose/cmd_vel'),    # Input pose twist commands
+            ('joint/cmd_vel', '/arm/joint/cmd_vel'),  # Input joint twist commands
+            ('joint_states', '/joint_states'),        # Input joint state feedback
+            ('current_pose', '/arm/current_pose'),    # Input current end effector pose
+            ('pose_command', '/arm/pose_command'),    # Output pose commands
+            ('joint_command', '/arm/joint_command'),  # Output joint commands
         ]
     )
 
@@ -92,7 +84,6 @@ def generate_launch_description():
         remappings=[
             ('piper/pose_command', '/arm/pose_command'),    # Input pose commands
             ('piper/joint_command', '/arm/joint_command'),  # Input joint commands
-            ('piper/control_mode', '/arm/control_mode'),    # Input control mode
             ('joint_states', '/joint_states'),              # Output joint state
             ('piper/current_pose', '/arm/current_pose'),    # Output current end effector pose
             ('piper/status', '/arm/status')                 # Output arm status
@@ -104,7 +95,6 @@ def generate_launch_description():
         declare_linear_scale,
         declare_angular_scale,
         declare_joint_vel_scale,
-        declare_control_mode,
         declare_can_interface,
         teleop_node,
         arm_node

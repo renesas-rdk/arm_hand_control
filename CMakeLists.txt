@@ -110,7 +110,6 @@ ament_target_dependencies(teleop_twist_controller
   std_msgs
   geometry_msgs
   trajectory_msgs
-  ament_index_cpp
   tf2
   tf2_geometry_msgs
 )
