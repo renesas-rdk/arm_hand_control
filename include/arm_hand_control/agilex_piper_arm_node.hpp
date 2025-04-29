@@ -3,6 +3,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <map>
 
@@ -44,7 +45,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
 
   // Subscribers
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_cmd_sub_;
+  rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_cmd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_cmd_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr control_mode_sub_;
 
@@ -57,7 +58,7 @@ private:
 
   // Callbacks
   void update_callback();
-  void joint_command_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
+  void joint_command_callback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
   void pose_command_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void control_mode_callback(const std_msgs::msg::String::SharedPtr msg);
 

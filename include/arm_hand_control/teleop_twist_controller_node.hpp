@@ -4,6 +4,7 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <std_msgs/msg/string.hpp>
 
 namespace arm_hand_control
@@ -38,7 +39,7 @@ private:
 
   // Publishers
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_cmd_pub_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_cmd_pub_;
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_cmd_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr control_mode_pub_;
 
   // Parameter callback handle

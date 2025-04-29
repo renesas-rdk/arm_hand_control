@@ -10,6 +10,8 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
+#include <trajectory_msgs/msg/joint_trajectory_point.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -57,7 +59,7 @@ TeleopTwistControllerNode::TeleopTwistControllerNode(const rclcpp::NodeOptions& 
 
   // Create publishers
   pose_cmd_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("pose_command", 10);
-  joint_cmd_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_command", 10);
+  joint_cmd_pub_ = this->create_publisher<trajectory_msgs::msg::JointTrajectory>("joint_command", 10);
   control_mode_pub_ = this->create_publisher<std_msgs::msg::String>("control_mode", 10);
 
   // Set initial control mode
@@ -271,10 +273,30 @@ void TeleopTwistControllerNode::publish_pose_command(const geometry_msgs::msg::P
 
 void TeleopTwistControllerNode::publish_joint_command(const sensor_msgs::msg::JointState& joint_state)
 {
-  auto msg = std::make_unique<sensor_msgs::msg::JointState>();
+  auto msg = std::make_unique<trajectory_msgs::msg::JointTrajectory>();
   msg->header.stamp = this->now();
-  msg->name = joint_state.name;
-  msg->position = joint_state.position;
+  msg->joint_names = joint_state.name;
+
+  // Create a single trajectory point for the target position
+  trajectory_msgs::msg::JointTrajectoryPoint point;
+  point.positions = joint_state.position;
+
+  // Set velocities to zero if not specified
+  if (joint_state.velocity.empty())
+  {
+    point.velocities.resize(joint_state.position.size(), 0.0);
+  }
+  else
+  {
+    point.velocities = joint_state.velocity;
+  }
+
+  // Add time from start
+  point.time_from_start = rclcpp::Duration::from_seconds(0.5);  // Half second execution time
+
+  // Add the point to the trajectory
+  msg->points.push_back(point);
+
   joint_cmd_pub_->publish(std::move(msg));
 }
 

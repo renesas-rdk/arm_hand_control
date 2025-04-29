@@ -96,7 +96,7 @@ void AgilexPiperArmNode::setup_publishers_and_subscribers()
   status_pub_ = this->create_publisher<std_msgs::msg::String>("piper/status", 10);
 
   // Create subscribers
-  joint_cmd_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
+  joint_cmd_sub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
       "piper/joint_command", 10, std::bind(&AgilexPiperArmNode::joint_command_callback, this, std::placeholders::_1));
   pose_cmd_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
       "piper/pose_command", 10, std::bind(&AgilexPiperArmNode::pose_command_callback, this, std::placeholders::_1));
@@ -244,7 +244,7 @@ void AgilexPiperArmNode::update_callback()
   publish_arm_status();
 }
 
-void AgilexPiperArmNode::joint_command_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+void AgilexPiperArmNode::joint_command_callback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
 {
   if (!controller_ || !controller_->is_connected())
   {
@@ -252,25 +252,50 @@ void AgilexPiperArmNode::joint_command_callback(const sensor_msgs::msg::JointSta
     return;
   }
 
-  // Check if the message contains valid joint data
-  if (msg->position.size() < 6)
+  // Check if the message contains valid trajectory data
+  if (msg->points.empty() || msg->joint_names.size() < 6 || msg->points[0].positions.size() < 6)
   {
-    RCLCPP_ERROR(this->get_logger(), "Joint command has fewer than 6 position values");
+    RCLCPP_ERROR(this->get_logger(), "Joint trajectory command has invalid format or fewer than 6 position values");
     return;
   }
 
+  // Use the first trajectory point (we could modify this to follow the entire trajectory)
+  const auto& point = msg->points[0];
+
+  // Find the correct indices for our joint order
+  std::vector<size_t> joint_indices(6, 0);
+  for (size_t i = 0; i < 6; ++i)
+  {
+    joint_indices[i] = i;  // Default to sequential ordering
+
+    // Try to find the joint by name
+    for (size_t j = 0; j < msg->joint_names.size(); ++j)
+    {
+      if (msg->joint_names[j] == joint_names_[i])
+      {
+        joint_indices[i] = j;
+        break;
+      }
+    }
+  }
+
   // Extract joint angles (in radians) and convert to controller format (0.001 degrees)
-  int j1 = static_cast<int>(msg->position[0] * 180.0 / M_PI * 1000.0);
-  int j2 = static_cast<int>(msg->position[1] * 180.0 / M_PI * 1000.0);
-  int j3 = static_cast<int>(msg->position[2] * 180.0 / M_PI * 1000.0);
-  int j4 = static_cast<int>(msg->position[3] * 180.0 / M_PI * 1000.0);
-  int j5 = static_cast<int>(msg->position[4] * 180.0 / M_PI * 1000.0);
-  int j6 = static_cast<int>(msg->position[5] * 180.0 / M_PI * 1000.0);
+  int j1 = static_cast<int>(point.positions[joint_indices[0]] * 180.0 / M_PI * 1000.0);
+  int j2 = static_cast<int>(point.positions[joint_indices[1]] * 180.0 / M_PI * 1000.0);
+  int j3 = static_cast<int>(point.positions[joint_indices[2]] * 180.0 / M_PI * 1000.0);
+  int j4 = static_cast<int>(point.positions[joint_indices[3]] * 180.0 / M_PI * 1000.0);
+  int j5 = static_cast<int>(point.positions[joint_indices[4]] * 180.0 / M_PI * 1000.0);
+  int j6 = static_cast<int>(point.positions[joint_indices[5]] * 180.0 / M_PI * 1000.0);
 
   // Send joint command to controller
   if (!controller_->set_joint_angles(j1, j2, j3, j4, j5, j6))
   {
     RCLCPP_ERROR(this->get_logger(), "Failed to send joint command to controller");
+  }
+  else
+  {
+    RCLCPP_DEBUG(this->get_logger(), "Sent joint command to controller: [%d, %d, %d, %d, %d, %d]", j1, j2, j3, j4, j5,
+                 j6);
   }
 }
 
