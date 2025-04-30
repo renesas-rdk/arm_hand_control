@@ -12,6 +12,29 @@
 namespace arm_hand_control
 {
 
+/**
+ * AgilexPiperArmNode provides ROS 2 interface for the AgileX Piper robotic arm
+ *
+ * This node creates an interface between ROS 2 and the AgileX Piper robotic arm,
+ * allowing for control via joint positions or Cartesian poses.
+ *
+ * Subscribed topics:
+ *   - piper/joint_command (trajectory_msgs/JointTrajectory): Joint position commands
+ *   - piper/pose_command (geometry_msgs/PoseStamped): End effector pose commands
+ *
+ * Published topics:
+ *   - joint_states (sensor_msgs/JointState): Current joint positions
+ *   - piper/current_pose (geometry_msgs/PoseStamped): Current end effector pose
+ *   - piper/status (std_msgs/String): Current arm status
+ *
+ * Parameters:
+ *   - can_interface (string): CAN interface to use (default: "can0")
+ *   - update_frequency (double): Update frequency in Hz (default: 50.0)
+ *   - config_file (string): Path to configuration file
+ *   - arm_enabled (bool): Whether the arm is enabled (default: false)
+ *   - control_mode (int): Control mode (0=Cartesian, 1=Joint, default: 1)
+ *   - listen_only (bool): When true, commands are received but not executed (default: false)
+ */
 class AgilexPiperArmNode : public rclcpp::Node
 {
 public:
@@ -33,6 +56,14 @@ private:
   std::string can_interface_;
   double update_frequency_;
 
+  // Control mode parameters
+  bool arm_enabled_;
+  int control_mode_;  // 0=Cartesian, 1=Joint
+  bool listen_only_;  // If true, no commands will be executed
+
+  // OnSetParametersCallbackHandle
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
+
   // Joint configuration
   std::map<std::string, JointConfig> joint_config_;
 
@@ -47,37 +78,30 @@ private:
   // Subscribers
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_cmd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_cmd_sub_;
-  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr control_mode_sub_;
 
   // Timers
   rclcpp::TimerBase::SharedPtr update_timer_;
 
-  // Joint names
+  // Joint names and positions
   std::vector<std::string> joint_names_;
   std::vector<double> joint_positions_;
 
-  // Callbacks
+  // Callback methods
   void update_callback();
   void joint_command_callback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg);
   void pose_command_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-  void control_mode_callback(const std_msgs::msg::String::SharedPtr msg);
+  rcl_interfaces::msg::SetParametersResult on_set_parameters_callback(const std::vector<rclcpp::Parameter>& parameters);
 
-  // Configuration methods
+  // Configuration and utility methods
+  std::string resolve_config_file_path(const std::string& config_file);
   bool load_joint_config(const std::string& config_file);
   void apply_joint_limits_to_sdk();
+  void apply_control_mode();
 
-  // Utility methods
+  // Publishing methods
   void publish_joint_states();
   void publish_end_pose();
   void publish_arm_status();
-
-  // Helper methods for better organization
-  void declare_and_get_parameters();
-  std::string resolve_config_file_path(const std::string& config_file);
-  void initialize_joint_data();
-  void setup_publishers_and_subscribers();
-  void initialize_controller();
-  void load_and_apply_configuration(const std::string& config_file_path);
 };
 
 }  // namespace arm_hand_control

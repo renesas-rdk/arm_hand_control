@@ -16,19 +16,75 @@ namespace arm_hand_control
 
 AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Node("piper_controller_node", options)
 {
-  // Declare and get parameters
-  declare_and_get_parameters();
+  // Declare parameters with default values
+  this->declare_parameter<std::string>("can_interface", "can0");
+  this->declare_parameter<double>("update_frequency", 50.0);
+  this->declare_parameter<std::string>("config_file", "config/arm/agilex_piper.yaml");
+  this->declare_parameter<bool>("arm_enabled", false);
+  this->declare_parameter<int>("control_mode", 1);      // Default to joint mode (1)
+  this->declare_parameter<bool>("listen_only", false);  // Default to execute commands
 
-  // Resolve the config file path
+  // Get parameter values
+  can_interface_ = this->get_parameter("can_interface").as_string();
+  update_frequency_ = this->get_parameter("update_frequency").as_double();
+  arm_enabled_ = this->get_parameter("arm_enabled").as_bool();
+  control_mode_ = this->get_parameter("control_mode").as_int();
+  listen_only_ = this->get_parameter("listen_only").as_bool();
+
+  // Initialize joint names and positions
+  joint_names_ = { "joint1", "joint2", "joint3", "joint4", "joint5", "joint6" };
+  joint_positions_ = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+
+  // Create publishers
+  joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
+  pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("piper/current_pose", 10);
+  status_pub_ = this->create_publisher<std_msgs::msg::String>("piper/status", 10);
+
+  // Create subscribers
+  joint_cmd_sub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
+      "piper/joint_command", 10, std::bind(&AgilexPiperArmNode::joint_command_callback, this, std::placeholders::_1));
+  pose_cmd_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+      "piper/pose_command", 10, std::bind(&AgilexPiperArmNode::pose_command_callback, this, std::placeholders::_1));
+
+  // Initialize controller
+  controller_ = std::make_unique<agilex::piper::PiperController>(can_interface_);
+  if (!controller_->is_connected())
+  {
+    RCLCPP_WARN(this->get_logger(), "Controller not connected. Will apply SDK joint limits when connected.");
+  }
+
+  // Resolve the config file path and load configuration
   std::string config_file_path = resolve_config_file_path(get_parameter("config_file").as_string());
 
-  // Initialize controller components
-  initialize_joint_data();
-  setup_publishers_and_subscribers();
-  initialize_controller();
+  if (!load_joint_config(config_file_path))
+  {
+    RCLCPP_ERROR(this->get_logger(), "Failed to load joint configuration from %s", config_file_path.c_str());
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "Successfully loaded joint configuration from %s", config_file_path.c_str());
+    // Apply the joint limits to the SDK if controller is connected
+    if (controller_->is_connected())
+    {
+      apply_joint_limits_to_sdk();
+      if (!listen_only_)
+      {
+        if (arm_enabled_)
+          controller_->enable_arm();
+        else
+          controller_->disable_arm();
+        apply_control_mode();
+      }
+      else
+      {
+        RCLCPP_INFO(this->get_logger(), "In listen-only mode: arm settings not applied on connection");
+      }
+    }
+  }
 
-  // Load configuration and apply limits
-  load_and_apply_configuration(config_file_path);
+  // Register parameter callback for dynamic parameter changes
+  param_callback_handle_ = this->add_on_set_parameters_callback(
+      std::bind(&AgilexPiperArmNode::on_set_parameters_callback, this, std::placeholders::_1));
 
   // Create timer for periodic updates
   update_timer_ = this->create_wall_timer(std::chrono::duration<double>(1.0 / update_frequency_),
@@ -36,16 +92,21 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
 
   RCLCPP_INFO(this->get_logger(), "Piper controller node initialized");
   RCLCPP_INFO(this->get_logger(), "Using CAN interface: %s", can_interface_.c_str());
+  if (listen_only_)
+  {
+    RCLCPP_INFO(this->get_logger(), "Running in listen-only mode. Commands will be received but not executed.");
+  }
 }
 
-void AgilexPiperArmNode::declare_and_get_parameters()
+AgilexPiperArmNode::~AgilexPiperArmNode()
 {
-  this->declare_parameter<std::string>("can_interface", "can0");
-  this->declare_parameter<double>("update_frequency", 50.0);
-  this->declare_parameter<std::string>("config_file", "config/arm/agilex_piper.yaml");
-
-  can_interface_ = this->get_parameter("can_interface").as_string();
-  update_frequency_ = this->get_parameter("update_frequency").as_double();
+  // Ensure controller is properly shut down
+  if (controller_)
+  {
+    controller_->disable_arm();
+    controller_->disconnect();
+  }
+  RCLCPP_INFO(this->get_logger(), "Piper controller node shutdown");
 }
 
 std::string AgilexPiperArmNode::resolve_config_file_path(const std::string& config_file)
@@ -79,67 +140,6 @@ std::string AgilexPiperArmNode::resolve_config_file_path(const std::string& conf
     config_file_path = config_file;  // Fallback to original path
   }
   return config_file_path;
-}
-
-void AgilexPiperArmNode::initialize_joint_data()
-{
-  // Initialize joint names and positions
-  joint_names_ = { "joint1", "joint2", "joint3", "joint4", "joint5", "joint6" };
-  joint_positions_ = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-}
-
-void AgilexPiperArmNode::setup_publishers_and_subscribers()
-{
-  // Create publishers
-  joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
-  pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("piper/current_pose", 10);
-  status_pub_ = this->create_publisher<std_msgs::msg::String>("piper/status", 10);
-
-  // Create subscribers
-  joint_cmd_sub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
-      "piper/joint_command", 10, std::bind(&AgilexPiperArmNode::joint_command_callback, this, std::placeholders::_1));
-  pose_cmd_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-      "piper/pose_command", 10, std::bind(&AgilexPiperArmNode::pose_command_callback, this, std::placeholders::_1));
-  control_mode_sub_ = this->create_subscription<std_msgs::msg::String>(
-      "piper/control_mode", 10, std::bind(&AgilexPiperArmNode::control_mode_callback, this, std::placeholders::_1));
-}
-
-void AgilexPiperArmNode::initialize_controller()
-{
-  controller_ = std::make_unique<agilex::piper::PiperController>(can_interface_);
-
-  if (!controller_->is_connected())
-  {
-    RCLCPP_WARN(this->get_logger(), "Controller not connected. Will apply SDK joint limits when connected.");
-  }
-}
-
-void AgilexPiperArmNode::load_and_apply_configuration(const std::string& config_file_path)
-{
-  if (!load_joint_config(config_file_path))
-  {
-    RCLCPP_ERROR(this->get_logger(), "Failed to load joint configuration from %s", config_file_path.c_str());
-  }
-  else
-  {
-    RCLCPP_INFO(this->get_logger(), "Successfully loaded joint configuration from %s", config_file_path.c_str());
-    // Apply the joint limits to the SDK if controller is connected
-    if (controller_->is_connected())
-    {
-      apply_joint_limits_to_sdk();
-    }
-  }
-}
-
-AgilexPiperArmNode::~AgilexPiperArmNode()
-{
-  // Ensure controller is properly shut down
-  if (controller_)
-  {
-    controller_->disable_arm();
-    controller_->disconnect();
-  }
-  RCLCPP_INFO(this->get_logger(), "Piper controller node shutdown");
 }
 
 bool AgilexPiperArmNode::load_joint_config(const std::string& config_file)
@@ -212,6 +212,96 @@ void AgilexPiperArmNode::apply_joint_limits_to_sdk()
   RCLCPP_INFO(this->get_logger(), "Applied all joint limits to SDK");
 }
 
+rcl_interfaces::msg::SetParametersResult
+AgilexPiperArmNode::on_set_parameters_callback(const std::vector<rclcpp::Parameter>& parameters)
+{
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+  result.reason = "success";
+
+  // Process each parameter
+  for (const auto& param : parameters)
+  {
+    if (param.get_name() == "arm_enabled")
+    {
+      bool new_state = param.as_bool();
+      if (new_state != arm_enabled_)
+      {
+        arm_enabled_ = new_state;
+        RCLCPP_INFO(this->get_logger(), "Arm %s", arm_enabled_ ? "enabled" : "disabled");
+
+        if (!listen_only_ && controller_ && controller_->is_connected())
+        {
+          if (arm_enabled_)
+            controller_->enable_arm();
+          else
+            controller_->disable_arm();
+        }
+        else if (listen_only_)
+        {
+          RCLCPP_INFO(this->get_logger(), "In listen-only mode: arm enable/disable command not executed");
+        }
+      }
+    }
+    else if (param.get_name() == "control_mode")
+    {
+      int new_mode = param.as_int();
+      if (new_mode != control_mode_ && (new_mode == 0 || new_mode == 1))  // 0=Cartesian, 1=Joint
+      {
+        control_mode_ = new_mode;
+        RCLCPP_INFO(this->get_logger(), "Control mode set to %s", control_mode_ == 0 ? "Cartesian" : "Joint");
+
+        if (!listen_only_)
+        {
+          apply_control_mode();
+        }
+        else
+        {
+          RCLCPP_INFO(this->get_logger(), "In listen-only mode: control mode change not applied");
+        }
+      }
+      else if (new_mode != 0 && new_mode != 1)
+      {
+        result.successful = false;
+        result.reason = "Invalid control mode. Valid values are 0 (Cartesian) and 1 (Joint).";
+      }
+    }
+    else if (param.get_name() == "listen_only")
+    {
+      bool new_state = param.as_bool();
+      if (new_state != listen_only_)
+      {
+        bool was_listen_only = listen_only_;
+        listen_only_ = new_state;
+        RCLCPP_INFO(this->get_logger(), "Listen-only mode %s", listen_only_ ? "enabled" : "disabled");
+
+        // If we're transitioning from listen-only to active mode, apply pending commands
+        if (was_listen_only && !listen_only_ && controller_ && controller_->is_connected())
+        {
+          RCLCPP_INFO(this->get_logger(), "Transitioning from listen-only mode, applying pending commands");
+          if (arm_enabled_)
+            controller_->enable_arm();
+          else
+            controller_->disable_arm();
+          apply_control_mode();
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+void AgilexPiperArmNode::apply_control_mode()
+{
+  // Set to joint or Cartesian control mode
+  // 0x01 = position control mode
+  // control_mode_ = 0 (Cartesian mode) or 1 (Joint mode)
+  // 50 = speed rate (50%)
+  controller_->set_mode(0x01, control_mode_, 50);
+  RCLCPP_INFO(this->get_logger(), "Set to %s control mode", control_mode_ == 0 ? "Cartesian" : "joint");
+}
+
 void AgilexPiperArmNode::update_callback()
 {
   if (!controller_ || !controller_->is_connected())
@@ -225,6 +315,20 @@ void AgilexPiperArmNode::update_callback()
       {
         RCLCPP_INFO(this->get_logger(), "Controller connected successfully");
         apply_joint_limits_to_sdk();
+
+        // Apply control mode settings after connection
+        if (!listen_only_)
+        {
+          if (arm_enabled_)
+            controller_->enable_arm();
+          else
+            controller_->disable_arm();
+          apply_control_mode();
+        }
+        else
+        {
+          RCLCPP_INFO(this->get_logger(), "In listen-only mode: arm settings not applied on connection");
+        }
       }
       else
       {
@@ -239,6 +343,7 @@ void AgilexPiperArmNode::update_callback()
     return;
   }
 
+  // Publish current state
   publish_joint_states();
   publish_end_pose();
   publish_arm_status();
@@ -249,6 +354,13 @@ void AgilexPiperArmNode::joint_command_callback(const trajectory_msgs::msg::Join
   if (!controller_ || !controller_->is_connected())
   {
     RCLCPP_WARN(this->get_logger(), "Controller not connected. Cannot send joint command.");
+    return;
+  }
+
+  if (listen_only_)
+  {
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                         "Received joint command but running in listen-only mode. Command ignored.");
     return;
   }
 
@@ -307,6 +419,13 @@ void AgilexPiperArmNode::pose_command_callback(const geometry_msgs::msg::PoseSta
     return;
   }
 
+  if (listen_only_)
+  {
+    RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                         "Received pose command but running in listen-only mode. Command ignored.");
+    return;
+  }
+
   // Extract position in meters and convert to controller format (0.001 mm)
   int x = static_cast<int>(msg->pose.position.x * 1000000.0);
   int y = static_cast<int>(msg->pose.position.y * 1000000.0);
@@ -326,59 +445,6 @@ void AgilexPiperArmNode::pose_command_callback(const geometry_msgs::msg::PoseSta
   if (!controller_->set_end_pose(x, y, z, rx, ry, rz))
   {
     RCLCPP_ERROR(this->get_logger(), "Failed to send pose command to controller");
-  }
-}
-
-void AgilexPiperArmNode::control_mode_callback(const std_msgs::msg::String::SharedPtr msg)
-{
-  if (!controller_ || !controller_->is_connected())
-  {
-    RCLCPP_WARN(this->get_logger(), "Controller not connected. Cannot set control mode.");
-    return;
-  }
-
-  // Parse the control mode message
-  std::string mode = msg->data;
-
-  if (mode == "enable")
-  {
-    controller_->enable_arm();
-    RCLCPP_INFO(this->get_logger(), "Enabled all joints");
-  }
-  else if (mode == "disable")
-  {
-    controller_->disable_arm();
-    RCLCPP_INFO(this->get_logger(), "Disabled all joints");
-  }
-  else if (mode == "emergency_stop")
-  {
-    // Emergency stop
-    controller_->motion_control_1(0x01);  // 0x01 = emergency stop
-    RCLCPP_INFO(this->get_logger(), "Emergency stop activated");
-  }
-  else if (mode == "resume_emergency")
-  {
-    // Resume emergency stop
-    controller_->motion_control_1(0x02);  // 0x02 = resume emergency stop
-    RCLCPP_INFO(this->get_logger(), "Emergency stop resume");
-  }
-  else if (mode == "joint_mode")
-  {
-    // Set to joint control mode
-    controller_->set_mode(0x01, 0x01, 50);
-    // 0x01 = position control mode, 0x01 = joint mode, 50 = speed rate (50%)
-    RCLCPP_INFO(this->get_logger(), "Set to joint control mode");
-  }
-  else if (mode == "cartesian_mode")
-  {
-    // Set to Cartesian control mode
-    controller_->set_mode(0x01, 0x00, 50);
-    // 0x01 = position control mode, 0x00 = Cartesian mode, 50 = speed rate (50%)
-    RCLCPP_INFO(this->get_logger(), "Set to Cartesian control mode");
-  }
-  else
-  {
-    RCLCPP_WARN(this->get_logger(), "Unknown control mode: %s", mode.c_str());
   }
 }
 

@@ -14,10 +14,10 @@ def generate_launch_description():
 
     # Set up launch arguments
     arm_config = LaunchConfiguration('arm_config_file')
-    linear_scale = LaunchConfiguration('linear_scale')
-    angular_scale = LaunchConfiguration('angular_scale')
-    joint_vel_scale = LaunchConfiguration('joint_vel_scale')
     can_interface = LaunchConfiguration('can_interface')
+    arm_enabled = LaunchConfiguration('arm_enabled')
+    control_mode = LaunchConfiguration('control_mode')
+    listen_only = LaunchConfiguration('listen_only')
 
     # Declare launch arguments
     declare_arm_config = DeclareLaunchArgument(
@@ -26,28 +26,28 @@ def generate_launch_description():
         description='Path to the arm configuration file'
     )
 
-    declare_linear_scale = DeclareLaunchArgument(
-        'linear_scale',
-        default_value='0.01',
-        description='Linear scale factor for cartesian position control (m per unit twist)'
-    )
-
-    declare_angular_scale = DeclareLaunchArgument(
-        'angular_scale',
-        default_value='0.01',
-        description='Angular scale factor for cartesian orientation control (rad per unit twist)'
-    )
-
-    declare_joint_vel_scale = DeclareLaunchArgument(
-        'joint_vel_scale',
-        default_value='0.01',
-        description='Joint velocity scale factor for joint position control (rad per unit twist)'
-    )
-
     declare_can_interface = DeclareLaunchArgument(
         'can_interface',
         default_value='can0',
         description='CAN interface to use for the arm controller'
+    )
+
+    declare_arm_enabled = DeclareLaunchArgument(
+        'arm_enabled',
+        default_value='true',
+        description='Enable the arm on startup'
+    )
+
+    declare_control_mode = DeclareLaunchArgument(
+        'control_mode',
+        default_value='1',
+        description='Control mode: 0=Cartesian, 1=Joint'
+    )
+
+    declare_listen_only = DeclareLaunchArgument(
+        'listen_only',
+        default_value='false',
+        description='If true, commands will be received but not executed'
     )
 
     # Create teleop controller node
@@ -57,9 +57,9 @@ def generate_launch_description():
         name='teleop_twist_controller',
         output='screen',
         parameters=[{
-            'linear_scale': linear_scale,
-            'angular_scale': angular_scale,
-            'joint_vel_scale': joint_vel_scale
+            'linear_scale': 0.01,
+            'angular_scale': 0.01,
+            'joint_vel_scale': 0.01
         }],
         remappings=[
             # Input topics
@@ -82,7 +82,10 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'config_file': arm_config,
-            'can_interface': can_interface
+            'can_interface': can_interface,
+            'arm_enabled': arm_enabled,
+            'control_mode': control_mode,
+            'listen_only': listen_only
         }],
         remappings=[
             # Input command topics
@@ -99,10 +102,10 @@ def generate_launch_description():
     return LaunchDescription([
         # Launch arguments
         declare_arm_config,
-        declare_linear_scale,
-        declare_angular_scale,
-        declare_joint_vel_scale,
         declare_can_interface,
+        declare_arm_enabled,
+        declare_control_mode,
+        declare_listen_only,
 
         # Nodes
         teleop_node,
