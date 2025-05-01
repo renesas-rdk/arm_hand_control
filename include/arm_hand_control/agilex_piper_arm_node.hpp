@@ -23,7 +23,7 @@ namespace arm_hand_control
  *   - piper/pose_command (geometry_msgs/PoseStamped): End effector pose commands
  *
  * Published topics:
- *   - joint_states (sensor_msgs/JointState): Current joint positions
+ *   - piper/joint_states (sensor_msgs/JointState): Current joint positions
  *   - piper/current_pose (geometry_msgs/PoseStamped): Current end effector pose
  *   - piper/status (std_msgs/String): Current arm status
  *

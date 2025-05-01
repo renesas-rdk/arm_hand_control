@@ -65,7 +65,7 @@ def generate_launch_description():
             # Input topics
             ('pose/cmd_vel', '/arm/pose/cmd_vel'),      # Pose twist commands
             ('joint/cmd_vel', '/arm/joint/cmd_vel'),    # Joint twist commands
-            ('joint_states', '/joint_states'),          # Joint state feedback
+            ('joint_states', '/arm/joint_states'),      # Joint state feedback
             ('current_pose', '/arm/current_pose'),      # Current end effector pose
 
             # Output topics
@@ -93,7 +93,7 @@ def generate_launch_description():
             ('piper/joint_command', '/arm/joint_command'),    # Joint commands
 
             # Output feedback topics
-            ('joint_states', '/joint_states'),                # Joint state
+            ('piper/joint_states', '/arm/joint_states'),      # Joint state
             ('piper/current_pose', '/arm/current_pose'),      # Current end effector pose
             ('piper/status', '/arm/status')                   # Arm status
         ]

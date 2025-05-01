@@ -36,7 +36,7 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
   joint_positions_ = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
   // Create publishers
-  joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
+  joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("piper/joint_states", 10);
   pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("piper/current_pose", 10);
   status_pub_ = this->create_publisher<std_msgs::msg::String>("piper/status", 10);
 
