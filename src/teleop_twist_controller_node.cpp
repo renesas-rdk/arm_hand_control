@@ -117,23 +117,21 @@ void TeleopTwistControllerNode::joint_twist_callback(const geometry_msgs::msg::T
   // Map twist components to joint changes
   if (new_joints.position.size() >= 6)
   {
-    // Standard 6-DOF robot arm mapping:
-    // Base joint (joint 0) - controlled by angular z (rotating the base)
+    // Standard 6-DOF robot arm mapping (hardcoded for simplicity)
+    // Note: This mapping may need to be adjusted based on the specific robot arm configuration
+    // The mapping assumes the following:
+    // - Joint1: Base rotation (angular z-axis)
+    // - Joint2: Shoulder elevation (linear z-axis)
+    // - Joint3: Elbow flexion (linear y-axis)
+    // - Joint4: Wrist rotation (linear x-axis)
+    // - Joint5: Wrist pitch (angular y-axis)
+    // - Joint6: Wrist roll (angular x-axis)
+
     new_joints.position[0] += msg->angular.z * joint_vel_scale_;
-
-    // Shoulder joint (joint 1) - controlled by linear z (up/down movement)
     new_joints.position[1] += msg->linear.z * joint_vel_scale_;
-
-    // Elbow joint (joint 2) - controlled by linear y (forward/backward movement)
     new_joints.position[2] += msg->linear.y * joint_vel_scale_;
-
-    // First wrist joint (joint 3) - controlled by linear x (side to side movement)
     new_joints.position[3] += msg->linear.x * joint_vel_scale_;
-
-    // Second wrist joint (joint 4) - controlled by angular y (pitch)
     new_joints.position[4] += msg->angular.y * joint_vel_scale_;
-
-    // Third wrist joint (joint 5) - controlled by angular x (roll)
     new_joints.position[5] += msg->angular.x * joint_vel_scale_;
 
     publish_joint_command(new_joints);
@@ -195,8 +193,8 @@ void TeleopTwistControllerNode::publish_joint_command(const sensor_msgs::msg::Jo
     point.velocities = joint_state.velocity;
   }
 
-  // Add time from start (half second execution time)
-  point.time_from_start = rclcpp::Duration::from_seconds(0.5);
+  // Add time from start and make the response immediate (5ms)
+  point.time_from_start = rclcpp::Duration::from_seconds(0.005);
 
   // Add the point to the trajectory
   msg->points.push_back(point);
