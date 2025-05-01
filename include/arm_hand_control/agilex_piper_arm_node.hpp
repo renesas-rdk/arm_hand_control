@@ -32,7 +32,7 @@ namespace arm_hand_control
  *   - update_frequency (double): Update frequency in Hz (default: 50.0)
  *   - config_file (string): Path to configuration file
  *   - arm_enabled (bool): Whether the arm is enabled (default: false)
- *   - control_mode (int): Control mode (0=Cartesian, 1=Joint, default: 1)
+ *   - motion_mode (int): Motion mode (0=Cartesian, 1=Joint, default: 1)
  *   - listen_only (bool): When true, commands are received but not executed (default: false)
  */
 class AgilexPiperArmNode : public rclcpp::Node
@@ -58,7 +58,7 @@ private:
 
   // Control mode parameters
   bool arm_enabled_;
-  int control_mode_;  // 0=Cartesian, 1=Joint
+  int motion_mode_;   // 0=Cartesian, 1=Joint
   bool listen_only_;  // If true, no commands will be executed
 
   // OnSetParametersCallbackHandle
@@ -96,7 +96,7 @@ private:
   std::string resolve_config_file_path(const std::string& config_file);
   bool load_joint_config(const std::string& config_file);
   void apply_joint_limits_to_sdk();
-  void apply_control_mode();
+  void apply_motion_mode();
 
   // Publishing methods
   void publish_joint_states();

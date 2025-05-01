@@ -19,7 +19,7 @@ def generate_launch_description():
     - Arm controller subscribes to: /arm/pose_command, /arm/joint_command
       and publishes: /arm/joint_states, /arm/current_pose, /arm/status
 
-    Note: Set parameter '/agilex_piper_arm.control_mode' to 0 for cartesian control and 1 for joint control.
+    Note: Set parameter '/agilex_piper_arm.motion_mode' to 0 for cartesian control and 1 for joint control.
     """
     # Get package share directory
     pkg_dir = get_package_share_directory('arm_hand_control')
@@ -28,7 +28,7 @@ def generate_launch_description():
     arm_config = LaunchConfiguration('arm_config_file')
     can_interface = LaunchConfiguration('can_interface')
     arm_enabled = LaunchConfiguration('arm_enabled')
-    control_mode = LaunchConfiguration('control_mode')
+    motion_mode = LaunchConfiguration('motion_mode')
     listen_only = LaunchConfiguration('listen_only')
 
     # Declare launch arguments
@@ -50,8 +50,8 @@ def generate_launch_description():
         description='Enable the arm on startup'
     )
 
-    declare_control_mode = DeclareLaunchArgument(
-        'control_mode',
+    declare_motion_mode = DeclareLaunchArgument(
+        'motion_mode',
         default_value='1',
         description='Control mode: 0=Cartesian, 1=Joint'
     )
@@ -100,7 +100,7 @@ def generate_launch_description():
             'config_file': arm_config,
             'can_interface': can_interface,
             'arm_enabled': arm_enabled,
-            'control_mode': control_mode,
+            'motion_mode': motion_mode,
             'listen_only': listen_only
         }],
         remappings=[
@@ -121,7 +121,7 @@ def generate_launch_description():
         declare_arm_config,
         declare_can_interface,
         declare_arm_enabled,
-        declare_control_mode,
+        declare_motion_mode,
         declare_listen_only,
 
         # Nodes

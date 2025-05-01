@@ -21,14 +21,14 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
   this->declare_parameter<double>("update_frequency", 50.0);
   this->declare_parameter<std::string>("config_file", "config/arm/agilex_piper.yaml");
   this->declare_parameter<bool>("arm_enabled", false);
-  this->declare_parameter<int>("control_mode", 1);      // Default to joint mode (1)
+  this->declare_parameter<int>("motion_mode", 1);       // Default to joint mode (1)
   this->declare_parameter<bool>("listen_only", false);  // Default to execute commands
 
   // Get parameter values
   can_interface_ = this->get_parameter("can_interface").as_string();
   update_frequency_ = this->get_parameter("update_frequency").as_double();
   arm_enabled_ = this->get_parameter("arm_enabled").as_bool();
-  control_mode_ = this->get_parameter("control_mode").as_int();
+  motion_mode_ = this->get_parameter("motion_mode").as_int();
   listen_only_ = this->get_parameter("listen_only").as_bool();
 
   // Initialize joint names and positions
@@ -73,7 +73,7 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
           controller_->enable_arm();
         else
           controller_->disable_arm();
-        apply_control_mode();
+        apply_motion_mode();
       }
       else
       {
@@ -236,6 +236,7 @@ AgilexPiperArmNode::on_set_parameters_callback(const std::vector<rclcpp::Paramet
             controller_->enable_arm();
           else
             controller_->disable_arm();
+          apply_motion_mode();
         }
         else if (listen_only_)
         {
@@ -243,27 +244,27 @@ AgilexPiperArmNode::on_set_parameters_callback(const std::vector<rclcpp::Paramet
         }
       }
     }
-    else if (param.get_name() == "control_mode")
+    else if (param.get_name() == "motion_mode")
     {
       int new_mode = param.as_int();
-      if (new_mode != control_mode_ && (new_mode == 0 || new_mode == 1))  // 0=Cartesian, 1=Joint
+      if (new_mode != motion_mode_ && (new_mode == 0 || new_mode == 1))  // 0=Cartesian, 1=Joint
       {
-        control_mode_ = new_mode;
-        RCLCPP_INFO(this->get_logger(), "Control mode set to %s", control_mode_ == 0 ? "Cartesian" : "Joint");
+        motion_mode_ = new_mode;
+        RCLCPP_INFO(this->get_logger(), "Motion mode set to %s", motion_mode_ == 0 ? "Cartesian" : "Joint");
 
         if (!listen_only_)
         {
-          apply_control_mode();
+          apply_motion_mode();
         }
         else
         {
-          RCLCPP_INFO(this->get_logger(), "In listen-only mode: control mode change not applied");
+          RCLCPP_INFO(this->get_logger(), "In listen-only mode: motion mode change not applied");
         }
       }
       else if (new_mode != 0 && new_mode != 1)
       {
         result.successful = false;
-        result.reason = "Invalid control mode. Valid values are 0 (Cartesian) and 1 (Joint).";
+        result.reason = "Invalid motion mode. Valid values are 0 (Cartesian) and 1 (Joint).";
       }
     }
     else if (param.get_name() == "listen_only")
@@ -283,7 +284,7 @@ AgilexPiperArmNode::on_set_parameters_callback(const std::vector<rclcpp::Paramet
             controller_->enable_arm();
           else
             controller_->disable_arm();
-          apply_control_mode();
+          apply_motion_mode();
         }
       }
     }
@@ -292,14 +293,14 @@ AgilexPiperArmNode::on_set_parameters_callback(const std::vector<rclcpp::Paramet
   return result;
 }
 
-void AgilexPiperArmNode::apply_control_mode()
+void AgilexPiperArmNode::apply_motion_mode()
 {
-  // Set to joint or Cartesian control mode
-  // 0x01 = position control mode
-  // control_mode_ = 0 (Cartesian mode) or 1 (Joint mode)
+  // Set to joint or Cartesian motion mode
+  // 0x01 = CAN control mode
+  // motion_mode_ = 0 (Cartesian mode) or 1 (Joint mode)
   // 50 = speed rate (50%)
-  controller_->set_mode(0x01, control_mode_, 50);
-  RCLCPP_INFO(this->get_logger(), "Set to %s control mode", control_mode_ == 0 ? "Cartesian" : "joint");
+  controller_->set_mode(0x01, motion_mode_, 50);
+  RCLCPP_INFO(this->get_logger(), "Set to %s motion mode", motion_mode_ == 0 ? "Cartesian" : "joint");
 }
 
 void AgilexPiperArmNode::update_callback()
@@ -316,14 +317,14 @@ void AgilexPiperArmNode::update_callback()
         RCLCPP_INFO(this->get_logger(), "Controller connected successfully");
         apply_joint_limits_to_sdk();
 
-        // Apply control mode settings after connection
+        // Apply motion mode settings after connection
         if (!listen_only_)
         {
           if (arm_enabled_)
             controller_->enable_arm();
           else
             controller_->disable_arm();
-          apply_control_mode();
+          apply_motion_mode();
         }
         else
         {
@@ -508,6 +509,15 @@ void AgilexPiperArmNode::publish_arm_status()
 {
   // Get the current arm status from the controller
   agilex::piper::ArmStatus status = controller_->get_arm_status();
+
+  // The arm could be in the teaching mode triggered by the user pressing the teach button
+  if ((status.ctrl_mode == 0x02) && arm_enabled_)
+  {
+    arm_enabled_ = false;
+    this->set_parameter(rclcpp::Parameter("arm_enabled", arm_enabled_));
+    RCLCPP_WARN(this->get_logger(), "Arm disabled due to teaching mode triggered: %d", status.ctrl_mode);
+    RCLCPP_WARN(this->get_logger(), "Set parameter arm_enabled back to true to recover from teaching mode!");
+  }
 
   // Create a string representation of the status
   std::ostringstream oss;
