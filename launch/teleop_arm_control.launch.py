@@ -9,6 +9,18 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    """
+    Launch teleop arm control.
+    Pipeline: teleop controller → arm controller
+
+    Topic flow:
+    - Teleop controller subscribes to: /arm/pose/cmd_vel, /arm/joint/cmd_vel, /arm/joint_states, /arm/current_pose
+      and publishes: /arm/pose_command, /arm/joint_command
+    - Arm controller subscribes to: /arm/pose_command, /arm/joint_command
+      and publishes: /arm/joint_states, /arm/current_pose, /arm/status
+
+    Note: Set parameter '/agilex_piper_arm.control_mode' to 0 for cartesian control and 1 for joint control.
+    """
     # Get package share directory
     pkg_dir = get_package_share_directory('arm_hand_control')
 
@@ -50,7 +62,9 @@ def generate_launch_description():
         description='If true, commands will be received but not executed'
     )
 
-    # Create teleop controller node
+    # 1. Create teleop controller node
+    # SUBSCRIBES: /arm/pose/cmd_vel, /arm/joint/cmd_vel, /arm/joint_states, /arm/current_pose
+    # PUBLISHES: /arm/pose_command, /arm/joint_command
     teleop_node = Node(
         package='arm_hand_control',
         executable='teleop_twist_controller',
@@ -74,7 +88,9 @@ def generate_launch_description():
         ]
     )
 
-    # Create arm controller node
+    # 2. Create arm controller node
+    # SUBSCRIBES: /arm/pose_command, /arm/joint_command
+    # PUBLISHES: /arm/joint_states, /arm/current_pose, /arm/status
     arm_node = Node(
         package='arm_hand_control',
         executable='agilex_piper_arm',
@@ -99,6 +115,7 @@ def generate_launch_description():
         ]
     )
 
+    # Return all nodes in execution order
     return LaunchDescription([
         # Launch arguments
         declare_arm_config,
@@ -108,6 +125,6 @@ def generate_launch_description():
         declare_listen_only,
 
         # Nodes
-        teleop_node,
-        arm_node
+        teleop_node,                  # Teleop controller
+        arm_node                      # Arm controller
     ])
