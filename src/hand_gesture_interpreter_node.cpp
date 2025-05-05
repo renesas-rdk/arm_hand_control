@@ -13,8 +13,8 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   // Declare parameters
   this->declare_parameter("config_file", "config/hand/inspire_rh56.yaml");
   this->declare_parameter("auto_demo_enabled", true);
-  this->declare_parameter("gesture_duration", 3.0);
-  this->declare_parameter("transition_duration", 1.0);  // Default smooth transition time
+  this->declare_parameter("gesture_duration", 1.0);
+  this->declare_parameter("transition_duration", 0.5);  // Default smooth transition time
 
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
@@ -40,6 +40,19 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   gesture_subscriber_ = this->create_subscription<std_msgs::msg::String>(
       "hand_gesture", qos, std::bind(&HandGestureInterpreter::gesture_callback, this, std::placeholders::_1));
 
+  // Create subscriber for hand landmarks
+  auto landmarks_qos = rclcpp::QoS(1).best_effort().durability_volatile();
+  landmarks_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseArray>(
+      "hand_landmarks", landmarks_qos,
+      std::bind(&HandGestureInterpreter::landmarks_callback, this, std::placeholders::_1));
+
+  // Create timer to check hand landmarks activity
+  landmarks_activity_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(500), std::bind(&HandGestureInterpreter::check_landmarks_activity, this));
+
+  // Initialize last landmarks time to now
+  last_landmarks_time_ = std::chrono::steady_clock::now();
+
   // Create action server
   using namespace std::placeholders;
   action_server_ = rclcpp_action::create_server<ExecuteGesture>(
@@ -52,6 +65,7 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
 
   RCLCPP_INFO(this->get_logger(), "Hand gesture interpreter started");
   RCLCPP_INFO(this->get_logger(), "Listening for gestures on topic: %s", gesture_subscriber_->get_topic_name());
+  RCLCPP_INFO(this->get_logger(), "Listening for hand landmarks on topic: %s", landmarks_subscriber_->get_topic_name());
   RCLCPP_INFO(this->get_logger(), "Gesture action server started: execute_gesture");
   RCLCPP_INFO(this->get_logger(), "Publishing joint states on topic: %s", joint_state_publisher_->get_topic_name());
   RCLCPP_INFO(this->get_logger(), "Using configuration file: %s", config_file_path_.c_str());
@@ -59,6 +73,8 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   RCLCPP_INFO(this->get_logger(), "Gesture duration: %.2f seconds", gesture_duration_);
   RCLCPP_INFO(this->get_logger(), "Transition duration: %.2f seconds", transition_duration_);
   RCLCPP_INFO(this->get_logger(), "Available gestures: %zu", get_all_available_gestures().size());
+  RCLCPP_INFO(this->get_logger(), "Will restart demo mode after %ld seconds of no landmarks",
+              landmarks_timeout_.count());
   for (const auto& gesture : get_all_available_gestures())
   {
     RCLCPP_INFO(this->get_logger(), "  - %s", gesture.c_str());
@@ -608,6 +624,56 @@ void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::Share
 
   // Execute the gesture with default transition duration
   execute_gesture(msg->data, transition_duration_);
+}
+
+// Add landmarks callback implementation
+void HandGestureInterpreter::landmarks_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg [[maybe_unused]])
+{
+  // Update last received time
+  last_landmarks_time_ = std::chrono::steady_clock::now();
+
+  // If this is the first landmark message or we haven't already stopped the demo
+  if (!hand_landmarks_received_ || !landmarks_demo_mode_stopped_)
+  {
+    RCLCPP_INFO(this->get_logger(), "Hand landmarks detected, stopping demo mode if running");
+
+    // Stop demo mode if it's running
+    if (demo_timer_)
+    {
+      stop_demo_mode();
+      landmarks_demo_mode_stopped_ = true;
+    }
+  }
+
+  // Set flag to indicate we've received landmarks
+  hand_landmarks_received_ = true;
+}
+
+// Add activity checking method
+void HandGestureInterpreter::check_landmarks_activity()
+{
+  // If we've never received landmarks, don't do anything
+  if (!hand_landmarks_received_)
+  {
+    return;
+  }
+
+  // Calculate time since last landmark
+  auto now = std::chrono::steady_clock::now();
+  auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_landmarks_time_);
+
+  // If landmarks have timed out and demo mode isn't running and auto demo is enabled
+  if (elapsed > landmarks_timeout_ && !demo_timer_ && auto_demo_enabled_ && landmarks_demo_mode_stopped_)
+  {
+    RCLCPP_INFO(this->get_logger(), "No hand landmarks received for %ld seconds, restarting demo mode",
+                elapsed.count());
+
+    // Restart demo mode
+    start_demo_mode();
+
+    // Reset flag since we're back in demo mode
+    landmarks_demo_mode_stopped_ = false;
+  }
 }
 
 //===== JOINT CONTROL METHODS =====
