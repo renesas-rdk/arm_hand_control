@@ -1,4 +1,5 @@
 #include <cmath>
+#include <filesystem>
 
 #include "arm_hand_control/hand_landmark_interpreter_node.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -15,6 +16,13 @@ HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpr
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
   curl_smooth_factor_ = this->get_parameter("curl_smooth_factor").as_double();
+
+  // Make the path absolute if it's relative
+  if (!std::filesystem::path(config_file_path_).is_absolute())
+  {
+    std::string pkg_path = ament_index_cpp::get_package_share_directory("arm_hand_control");
+    config_file_path_ = pkg_path + "/" + config_file_path_;
+  }
 
   // Load configuration
   load_configuration();
