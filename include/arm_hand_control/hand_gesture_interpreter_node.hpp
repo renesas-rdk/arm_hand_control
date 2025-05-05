@@ -4,10 +4,13 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <yaml-cpp/yaml.h>
 #include <map>
 #include <string>
 #include <vector>
+#include <memory>
+#include <chrono>
 
 // Include the generated action
 #include "arm_hand_control/action/execute_gesture.hpp"
@@ -38,6 +41,7 @@ private:
   //===== ROS Communication =====
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr gesture_subscriber_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmarks_subscriber_;
   rclcpp_action::Server<ExecuteGesture>::SharedPtr action_server_;
 
   //===== Joint State Data =====
@@ -68,6 +72,13 @@ private:
   size_t current_gesture_idx_ = 0;
   bool demo_gesture_in_progress_ = false;
 
+  //===== Hand Landmarks Tracking =====
+  rclcpp::TimerBase::SharedPtr landmarks_activity_timer_;
+  bool hand_landmarks_received_ = false;
+  std::chrono::time_point<std::chrono::steady_clock> last_landmarks_time_;
+  const std::chrono::seconds landmarks_timeout_{ 5 };  // 5 seconds timeout
+  bool landmarks_demo_mode_stopped_ = false;
+
   //===== Action Server Methods =====
   rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID& uuid,
                                           std::shared_ptr<const ExecuteGesture::Goal> goal);
@@ -90,6 +101,10 @@ private:
   void stop_demo_mode();
   void demo_timer_callback();
   std::vector<std::string> get_all_available_gestures();
+
+  //===== Hand Landmarks Methods =====
+  void landmarks_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg);
+  void check_landmarks_activity();
 
   //===== Joint Control Methods =====
   void set_joint_position(const std::string& joint_name, double position);
