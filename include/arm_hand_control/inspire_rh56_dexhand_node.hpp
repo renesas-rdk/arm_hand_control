@@ -22,6 +22,29 @@ struct JointInfo
   size_t command_index;     // index in the command array
 };
 
+/**
+ * Inspire RH56 Dexhand controller node
+ *
+ * This node serves as the hardware interface for the Inspire RH56 Dexhand.
+ * It receives joint position commands and translates them into the appropriate
+ * serial commands for the physical hand hardware. The node manages the serial
+ * connection and handles command thresholding to reduce unnecessary updates.
+ *
+ * Topics:
+ * - Subscriptions:
+ *   - joint_states (sensor_msgs/JointState):
+ *     Joint positions to be applied to the robotic hand
+ *
+ * Hardware Interface:
+ * - Serial connection to the Inspire RH56 Dexhand
+ *
+ * Parameters:
+ * - port (string): Serial port for the hand (e.g., "/dev/ttyUSB0")
+ * - baudrate (int): Serial baudrate (default: 115200)
+ * - config_file (string): Path to joint configuration file
+ * - command_threshold (int): Threshold for sending new commands (to avoid sending
+ *   identical commands or commands with minimal differences)
+ */
 class InspireRH56DexhandNode : public rclcpp::Node
 {
 public:

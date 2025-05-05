@@ -21,6 +21,27 @@ struct JointConfig
   double default_position;
 };
 
+/**
+ * Hand landmark interpreter node
+ *
+ * This node receives hand landmark positions from vision-based tracking systems
+ * (like MediaPipe) and converts them into joint positions for a robotic hand.
+ * It calculates finger curl and joint angles based on the relative positions
+ * of landmarks, applying smoothing for more stable control.
+ *
+ * Topics:
+ * - Subscriptions:
+ *   - hand_landmarks (geometry_msgs/PoseArray):
+ *     3D positions of hand landmarks (21 points matching MediaPipe model)
+ *
+ * - Publications:
+ *   - joint_states (sensor_msgs/JointState):
+ *     Joint positions for the robotic hand
+ *
+ * Parameters:
+ * - config_file (string): Path to the hand configuration YAML file
+ * - curl_smooth_factor (float): Smoothing factor for finger curl calculations (0.0-1.0)
+ */
 class HandLandmarkInterpreter : public rclcpp::Node
 {
 public:

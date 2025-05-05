@@ -27,6 +27,34 @@ struct JointConfig
   double default_position;  // Default/rest position (radians)
 };
 
+/**
+ * Hand gesture interpreter node
+ *
+ * This node interprets gesture commands and translates them into joint positions
+ * for controlling a robotic hand. It supports predefined gestures, transitions
+ * between gestures, and a demo mode that cycles through available gestures.
+ *
+ * Topics:
+ * - Subscriptions:
+ *   - hand_gesture (std_msgs/String):
+ *     Receives gesture command strings (e.g., "grasp", "pinch", "point")
+ *   - hand_landmarks (geometry_msgs/PoseArray):
+ *     Receives hand landmark positions to detect user activity
+ *
+ * - Publications:
+ *   - joint_states (sensor_msgs/JointState):
+ *     Publishes joint positions for the robotic hand
+ *
+ * - Actions:
+ *   - execute_gesture (arm_hand_control/action/ExecuteGesture):
+ *     Provides smooth transitions between gestures with progress feedback
+ *
+ * Parameters:
+ * - config_file (string): Path to the hand configuration YAML file
+ * - auto_demo_enabled (bool): Whether to automatically cycle through gestures
+ * - gesture_duration (double): Duration to hold each gesture in demo mode
+ * - transition_duration (double): Duration for transitions between gestures
+ */
 class HandGestureInterpreter : public rclcpp::Node
 {
 public:
