@@ -6,32 +6,49 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('arm_hand_control')
-    default_config_file = os.path.join(pkg_share, 'config/hand/inspire_rh56.yaml')
+    # Get the package directory
+    pkg_dir = get_package_share_directory('arm_hand_control')
 
-    config_file = LaunchConfiguration('config_file')
-    serial_port = LaunchConfiguration('serial_port')
+    # Default config file path (relative to package)
+    default_config = os.path.join('config', 'hand/inspire_rh56.yaml')
 
+    # Declare launch arguments
+    config_arg = DeclareLaunchArgument(
+        'config_file',
+        default_value=default_config,
+        description='Path to config file for hand parameters'
+    )
+
+    serial_port_arg = DeclareLaunchArgument(
+        'serial_port',
+        default_value='/dev/ttyUSB0',
+        description='Serial port for the Inspire RH56 hand'
+    )
+
+    baudrate_arg = DeclareLaunchArgument(
+        'baudrate',
+        default_value='115200',
+        description='Baudrate for serial communication'
+    )
+
+    # Create the node
+    inspire_rh56_dexhand_node = Node(
+        package='arm_hand_control',
+        executable='inspire_rh56_dexhand',
+        name='inspire_rh56_dexhand',
+        output='screen',
+        parameters=[{
+            'config_file': LaunchConfiguration('config_file'),
+            'serial_port': LaunchConfiguration('serial_port'),
+            'baudrate': LaunchConfiguration('baudrate'),
+            'command_threshold': 50
+        }]
+    )
+
+    # Return the launch description
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'config_file',
-            default_value=default_config_file,
-            description='Path to the joint configuration YAML file'),
-
-        DeclareLaunchArgument(
-            'serial_port',
-            default_value='/dev/ttyUSB0',
-            description='Serial port for the Inspire RH56 hand'),
-
-        Node(
-            package='arm_hand_control',
-            executable='inspire_rh56_dexhand',
-            name='inspire_rh56_dexhand_node',
-            parameters=[
-                {'config_file': config_file,
-                 'serial_port': serial_port,
-                 'command_threshold': 20}
-            ],
-            output='screen'
-        )
+        config_arg,
+        serial_port_arg,
+        baudrate_arg,
+        inspire_rh56_dexhand_node
     ])

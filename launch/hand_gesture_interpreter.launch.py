@@ -25,9 +25,12 @@ def generate_launch_description():
         executable='hand_gesture_interpreter',
         name='hand_gesture_interpreter',
         output='screen',
-        parameters=[
-            {'config_file': LaunchConfiguration('config_file')}
-        ]
+        parameters=[{
+            'config_file': LaunchConfiguration('config_file'),
+            'auto_demo_enabled': True,
+            'gesture_duration': 1.0,
+            'transition_duration': 0.5
+        }]
     )
 
     # Return the launch description
