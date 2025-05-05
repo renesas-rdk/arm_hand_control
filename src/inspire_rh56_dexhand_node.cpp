@@ -1,5 +1,6 @@
 #include "arm_hand_control/inspire_rh56_dexhand_node.hpp"
-
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <filesystem>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -27,6 +28,13 @@ InspireRH56DexhandNode::InspireRH56DexhandNode() : Node("inspire_rh56_dexhand_no
   std::string serial_port = get_parameter("serial_port").as_string();
   int baudrate = get_parameter("baudrate").as_int();
   command_threshold_ = get_parameter("command_threshold").as_int();
+
+  // Make the path absolute if it's relative
+  if (!std::filesystem::path(config_file).is_absolute())
+  {
+    std::string pkg_path = ament_index_cpp::get_package_share_directory("arm_hand_control");
+    config_file = pkg_path + "/" + config_file;
+  }
 
   // Load joint configuration
   if (!load_joint_config(config_file))
