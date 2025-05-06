@@ -207,7 +207,7 @@ void HandGestureInterpreter::stop_demo_mode()
 std::vector<std::string> HandGestureInterpreter::get_all_available_gestures()
 {
   return { // Basic hand gestures
-           "open_hand", "pinch", "three_finger_grasp", "grasp",
+           "open_hand", "pinch", "three_finger_grasp",
 
            // Counting gestures
            "one", "two", "three", "four", "five",
@@ -216,7 +216,7 @@ std::vector<std::string> HandGestureInterpreter::get_all_available_gestures()
            "point", "thumbs_up", "ok", "peace", "call_me",
 
            // Fun/special gestures
-           "rock", "fist_bump", "gun", "spider_man", "finger_cross", "italian_hand"
+           "rock", "fist_bump", "gun", "spider_man", "finger_cross"
   };
 }
 
@@ -823,25 +823,25 @@ void HandGestureInterpreter::ok()
     {
       for (const auto& joint : finger_joints_["thumb"]["yaw"])
       {
-        joint_positions_[joint] = joint_limits_[joint] * 0.5;  // Half of max limit
+        joint_positions_[joint] = joint_limits_[joint] * 0.9;
       }
     }
     if (finger_joints_["thumb"].count("pitch") > 0)
     {
       for (const auto& joint : finger_joints_["thumb"]["pitch"])
       {
-        joint_positions_[joint] = joint_limits_[joint] * 0.7;  // 70% of max limit
+        joint_positions_[joint] = joint_limits_[joint] * 0.5;
       }
     }
   }
 
   // Curl index finger to meet thumb
-  set_finger_positions("index", 0.5);  // Half closed
+  set_finger_positions("index", 0.6);
 
   // Other fingers slightly flexed
-  set_finger_positions("middle", 0.1);
-  set_finger_positions("ring", 0.1);
-  set_finger_positions("pinky", 0.1);
+  set_finger_positions("middle", 0.08);
+  set_finger_positions("ring", 0.05);
+  set_finger_positions("pinky", 0.0);
 }
 
 void HandGestureInterpreter::call_me()
