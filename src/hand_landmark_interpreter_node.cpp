@@ -264,14 +264,26 @@ std::tuple<double, double> HandLandmarkInterpreter::calculate_finger_curl(
   // Using a power function where power > 1 reduces sensitivity in lower values
   // and power < 1 reduces sensitivity in higher values
   double power = 2.0;  // Adjust this value to control sensitivity (higher = less sensitive)
+
+  // Use higher power for thumb to reduce sensitivity even more
+  if ((finger == "thumb_yaw") || (finger == "thumb_pitch"))
+  {
+    power = 6.0;  // Increased power for thumb yaw specifically
+  }
+
   double transformed_percentage = std::pow(raw_percentage, power);
 
   // Apply exponential moving average (EMA) smoothing if we have previous data
   auto prev_it = prev_finger_curls_.find(finger);
   if (prev_it != prev_finger_curls_.end())
   {
-    transformed_percentage =
-        curl_smooth_factor_ * prev_it->second + (1.0 - curl_smooth_factor_) * transformed_percentage;
+    double smooth_factor = curl_smooth_factor_;
+    // Use stronger smoothing for thumb
+    if ((finger == "thumb_yaw") || (finger == "thumb_pitch"))
+    {
+      smooth_factor = std::min(0.9, curl_smooth_factor_ + 0.1);  // Increase smoothing factor for thumb yaw
+    }
+    transformed_percentage = smooth_factor * prev_it->second + (1.0 - smooth_factor) * transformed_percentage;
   }
 
   // Store the smoothed value for next frame
