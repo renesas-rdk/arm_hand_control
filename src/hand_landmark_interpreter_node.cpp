@@ -221,10 +221,10 @@ std::tuple<double, double> HandLandmarkInterpreter::calculate_finger_curl(
 
   // Map fingers to their landmark configuration for angle calculation
   static const std::map<std::string, finger_angle_config> finger_configs = {
-    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, 60, 170 } },
-    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, 40, 170 } },
-    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, 40, 170 } },
-    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, 40, 170 } },
+    { "pinky", { PINKY_TIP_IDX, PINKY_PIP_IDX, PINKY_MCP_IDX, 90, 170 } },
+    { "ring", { RING_TIP_IDX, RING_PIP_IDX, RING_MCP_IDX, 70, 170 } },
+    { "middle", { MIDDLE_TIP_IDX, MIDDLE_PIP_IDX, MIDDLE_MCP_IDX, 70, 170 } },
+    { "index", { INDEX_TIP_IDX, INDEX_PIP_IDX, INDEX_MCP_IDX, 70, 170 } },
     { "thumb_pitch", { THUMB_TIP_IDX, THUMB_MCP_IDX, THUMB_CMC_IDX, 110, 170 } },
     { "thumb_yaw", { THUMB_MCP_IDX, THUMB_CMC_IDX, INDEX_MCP_IDX, 25, 50 } }
   };
