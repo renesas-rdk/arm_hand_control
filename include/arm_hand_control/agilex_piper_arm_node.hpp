@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -25,7 +26,7 @@ namespace arm_hand_control
  * Published topics:
  *   - piper/joint_states (sensor_msgs/JointState): Current joint positions
  *   - piper/current_pose (geometry_msgs/PoseStamped): Current end effector pose
- *   - piper/status (std_msgs/String): Current arm status
+ *   - piper/status (std_msgs/UInt8MultiArray): Current arm status
  *
  * Parameters:
  *   - can_interface (string): CAN interface to use (default: "can0")
@@ -73,7 +74,7 @@ private:
   // Publishers
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr status_pub_;
 
   // Subscribers
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_cmd_sub_;

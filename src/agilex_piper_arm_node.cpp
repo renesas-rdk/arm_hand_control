@@ -38,7 +38,7 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
   // Create publishers
   joint_state_pub_ = this->create_publisher<sensor_msgs::msg::JointState>("piper/joint_states", 10);
   pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("piper/current_pose", 10);
-  status_pub_ = this->create_publisher<std_msgs::msg::String>("piper/status", 10);
+  status_pub_ = this->create_publisher<std_msgs::msg::UInt8MultiArray>("piper/status", 10);
 
   // Create subscribers
   joint_cmd_sub_ = this->create_subscription<trajectory_msgs::msg::JointTrajectory>(
@@ -519,26 +519,23 @@ void AgilexPiperArmNode::publish_arm_status()
     RCLCPP_WARN(this->get_logger(), "Set parameter arm_enabled back to true to recover from teaching mode!");
   }
 
-  // Create a string representation of the status
-  std::ostringstream oss;
-  oss << "Control Mode: " << static_cast<int>(status.ctrl_mode) << ", ";
-  oss << "Arm Status: " << static_cast<int>(status.arm_status) << ", ";
-  oss << "Mode Feedback: " << static_cast<int>(status.mode_feed) << ", ";
-  oss << "Teach Status: " << static_cast<int>(status.teach_status) << ", ";
-  oss << "Motion Status: " << static_cast<int>(status.motion_status) << ", ";
-  oss << "Trajectory Number: " << static_cast<int>(status.trajectory_num) << ", ";
-  oss << "Communication Error: " << static_cast<int>(status.err_code_comm) << ", ";
-  oss << "Angle Error: " << static_cast<int>(status.err_code_angle);
-
-  auto status_msg = std::make_unique<std_msgs::msg::String>();
-  status_msg->data = oss.str();
+  // Pack status fields into UInt8MultiArray
+  auto status_msg = std::make_unique<std_msgs::msg::UInt8MultiArray>();
+  status_msg->data = { static_cast<uint8_t>(status.ctrl_mode),     static_cast<uint8_t>(status.arm_status),
+                       static_cast<uint8_t>(status.mode_feed),     static_cast<uint8_t>(status.teach_status),
+                       static_cast<uint8_t>(status.motion_status), static_cast<uint8_t>(status.trajectory_num),
+                       static_cast<uint8_t>(status.err_code_comm), static_cast<uint8_t>(status.err_code_angle) };
 
   status_pub_->publish(std::move(status_msg));
 
   // Also log status if there's an error
   if (status.err_code_comm != 0 || status.err_code_angle != 0)
   {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "Arm status error: %s", oss.str().c_str());
+    std::ostringstream oss;
+    oss << "Arm status error - Control Mode: " << static_cast<int>(status.ctrl_mode)
+        << ", Communication Error: " << static_cast<int>(status.err_code_comm)
+        << ", Angle Error: " << static_cast<int>(status.err_code_angle);
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "%s", oss.str().c_str());
   }
 }
 
