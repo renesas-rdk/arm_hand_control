@@ -125,6 +125,15 @@ target_link_libraries(gesture_action_client
   "${cpp_typesupport_target}"
 )
 
+# hand landmark twist publisher
+add_executable(hand_landmark_twist_publisher src/hand_landmark_twist_publisher.cpp)
+ament_target_dependencies(hand_landmark_twist_publisher
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+  tf2
+)
+
 # Installation
 install(TARGETS
   hand_gesture_interpreter
@@ -133,6 +142,7 @@ install(TARGETS
   agilex_piper_arm
   teleop_twist_controller
   gesture_action_client
+  hand_landmark_twist_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 
