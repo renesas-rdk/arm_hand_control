@@ -101,6 +101,9 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
   twist_cmd.angular.y = apply_smoothing(orientation_change.y(), previous_twist_.angular.y, smoothing_factor_);
   twist_cmd.angular.z = apply_smoothing(orientation_change.z(), previous_twist_.angular.z, smoothing_factor_);
 
+  // Store the previous twist command for smoothing
+  previous_twist_ = twist_cmd;
+
   // Apply scaling and limits
   twist_cmd.linear.x = clamp_value(twist_cmd.linear.x * position_scale_, -max_twist_linear_, max_twist_linear_);
   twist_cmd.linear.y = clamp_value(twist_cmd.linear.y * position_scale_, -max_twist_linear_, max_twist_linear_);
@@ -108,8 +111,6 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
   twist_cmd.angular.x = clamp_value(twist_cmd.angular.x * orientation_scale_, -max_twist_angular_, max_twist_angular_);
   twist_cmd.angular.y = clamp_value(twist_cmd.angular.y * orientation_scale_, -max_twist_angular_, max_twist_angular_);
   twist_cmd.angular.z = clamp_value(twist_cmd.angular.z * orientation_scale_, -max_twist_angular_, max_twist_angular_);
-
-  previous_twist_ = twist_cmd;
 
   // Apply dead zone and publish
   twist_cmd.linear.x = apply_dead_zone(twist_cmd.linear.x, dead_zone_threshold_);
@@ -149,6 +150,10 @@ void HandLandmarkTwistPublisher::calculate_xy_position_change(const std::vector<
 tf2::Vector3
 HandLandmarkTwistPublisher::calculate_orientation_change(const std::vector<geometry_msgs::msg::Pose>& landmarks)
 {
+  // We need better way to calculate orientation change
+  // Uncomment the following line to disable orientation change calculation
+  return tf2::Vector3(0.0, 0.0, 0.0);
+
   // Get current and reference triangle points
   auto get_vector = [](const geometry_msgs::msg::Pose& p) { return tf2::Vector3(p.position.x, p.position.y, 0.0); };
 

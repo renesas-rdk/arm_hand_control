@@ -76,7 +76,7 @@ private:
   std::chrono::steady_clock::time_point continuous_detection_start_;
   std::chrono::steady_clock::time_point last_detection_time_;
   static constexpr auto DETECTION_REQUIRED_DURATION = std::chrono::seconds(2);
-  static constexpr auto DETECTION_TIMEOUT_DURATION = std::chrono::seconds(2);
+  static constexpr auto DETECTION_TIMEOUT_DURATION = std::chrono::seconds(1);
 
   // MediaPipe hand landmark indices
   static constexpr int HAND_LANDMARK_COUNT = 21;
