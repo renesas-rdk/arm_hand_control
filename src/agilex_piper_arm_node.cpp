@@ -298,8 +298,8 @@ void AgilexPiperArmNode::apply_motion_mode()
   // Set to joint or Cartesian motion mode
   // 0x01 = CAN control mode
   // motion_mode_ = 0 (Cartesian mode) or 1 (Joint mode)
-  // 50 = speed rate (50%)
-  controller_->set_mode(0x01, motion_mode_, 50);
+  // 100 = speed rate (100%)
+  controller_->set_mode(0x01, motion_mode_, 100, 0);
   RCLCPP_INFO(this->get_logger(), "Set to %s motion mode", motion_mode_ == 0 ? "Cartesian" : "joint");
 }
 
