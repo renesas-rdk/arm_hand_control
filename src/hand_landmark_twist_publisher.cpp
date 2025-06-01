@@ -9,6 +9,8 @@ HandLandmarkTwistPublisher::HandLandmarkTwistPublisher()
   : Node("hand_landmark_twist_publisher")
   , has_reference_(false)
   , reference_index_pinky_distance_(0.0)
+  , reference_thumb_index_distance_(0.0)
+  , last_grasp_percentage_(-1.0)
   , continuous_detection_start_(std::chrono::steady_clock::now())
   , last_detection_time_(std::chrono::steady_clock::now())
 {
@@ -36,6 +38,8 @@ HandLandmarkTwistPublisher::HandLandmarkTwistPublisher()
       "hand_landmarks", 10, std::bind(&HandLandmarkTwistPublisher::landmark_callback, this, std::placeholders::_1));
 
   twist_publisher_ = create_publisher<geometry_msgs::msg::Twist>("pose/cmd_vel", 10);
+
+  gesture_client_ = rclcpp_action::create_client<ExecuteGesture>(this, "execute_gesture");
 
   timeout_timer_ = create_wall_timer(std::chrono::milliseconds(100),
                                      std::bind(&HandLandmarkTwistPublisher::check_detection_timeout, this));
@@ -74,6 +78,7 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
     {
       reference_landmarks_ = msg->poses;
       reference_index_pinky_distance_ = calculate_distance(msg->poses[INDEX_MCP_IDX], msg->poses[PINKY_MCP_IDX]);
+      reference_thumb_index_distance_ = calculate_distance(msg->poses[THUMB_TIP_IDX], msg->poses[INDEX_MCP_IDX]);
       reference_middle_finger_position_ = msg->poses[MIDDLE_MCP_IDX];
       has_reference_ = true;
 
@@ -82,6 +87,9 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
     }
     return;
   }
+
+  // Process grasp gesture
+  process_grasp_gesture(msg->poses);
 
   // Calculate twist command
   geometry_msgs::msg::Twist twist_cmd;
@@ -255,6 +263,61 @@ void HandLandmarkTwistPublisher::check_detection_timeout()
     RCLCPP_WARN(get_logger(), "Reference invalidated after %.1f seconds without detection",
                 std::chrono::duration<double>(time_since_last_detection).count());
   }
+}
+
+double
+HandLandmarkTwistPublisher::calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose>& landmarks)
+{
+  return calculate_distance(landmarks[THUMB_TIP_IDX], landmarks[INDEX_MCP_IDX]);
+}
+
+void HandLandmarkTwistPublisher::process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks)
+{
+  if (!gesture_client_->wait_for_action_server(std::chrono::milliseconds(10)))
+  {
+    return;  // Action server not available, skip this time
+  }
+
+  double current_thumb_index_distance = calculate_thumb_index_distance(landmarks);
+
+  // Calculate percentage based on distance change from reference
+  // When thumb and index are closer together, percentage should be higher (more closed grasp)
+  double distance_ratio =
+      (reference_thumb_index_distance_ > 0.0) ? (current_thumb_index_distance / reference_thumb_index_distance_) : 1.0;
+
+  // Invert the ratio so closer fingers = higher percentage
+  // Clamp between 0.0 and 1.0 (not 0-100)
+  double grasp_percentage = std::clamp(1.0 - distance_ratio, 0.0, 1.0);
+
+  // Only send goal if percentage changed significantly (avoid spam)
+  // Use 0.05 (5%) threshold for 0.0-1.0 range
+  if (std::abs(grasp_percentage - last_grasp_percentage_) > 0.05)
+  {
+    send_grasp_goal(static_cast<float>(grasp_percentage));
+    last_grasp_percentage_ = grasp_percentage;
+  }
+}
+
+void HandLandmarkTwistPublisher::send_grasp_goal(float percentage)
+{
+  auto goal_msg = ExecuteGesture::Goal();
+  goal_msg.gesture_name = percentage < 0.1 ? "open_hand" : "three_finger_grasp";
+  goal_msg.duration = 0.1f;
+  goal_msg.percentage = percentage;
+
+  auto send_goal_options = rclcpp_action::Client<ExecuteGesture>::SendGoalOptions();
+
+  // Simple result callback (no feedback needed for quick updates)
+  send_goal_options.result_callback = [this](const GoalHandleExecuteGesture::WrappedResult& result) {
+    if (result.code != rclcpp_action::ResultCode::SUCCEEDED)
+    {
+      RCLCPP_DEBUG(get_logger(), "Grasp goal failed");
+    }
+  };
+
+  gesture_client_->async_send_goal(goal_msg, send_goal_options);
+
+  RCLCPP_DEBUG(get_logger(), "Sent grasp goal: %.3f", percentage);
 }
 
 }  // namespace arm_hand_control

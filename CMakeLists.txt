@@ -132,6 +132,10 @@ ament_target_dependencies(hand_landmark_twist_publisher
   geometry_msgs
   sensor_msgs
   tf2
+  rclcpp_action
+)
+target_link_libraries(hand_landmark_twist_publisher
+  "${cpp_typesupport_target}"
 )
 
 # Installation

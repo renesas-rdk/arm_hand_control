@@ -1,11 +1,14 @@
 #pragma once
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <tf2/LinearMath/Vector3.h>
 #include <chrono>
+
+#include "arm_hand_control/action/execute_gesture.hpp"
 
 namespace arm_hand_control
 {
@@ -36,6 +39,9 @@ namespace arm_hand_control
 class HandLandmarkTwistPublisher : public rclcpp::Node
 {
 public:
+  using ExecuteGesture = arm_hand_control::action::ExecuteGesture;
+  using GoalHandleExecuteGesture = rclcpp_action::ClientGoalHandle<ExecuteGesture>;
+
   HandLandmarkTwistPublisher();
   ~HandLandmarkTwistPublisher() = default;
 
@@ -49,6 +55,11 @@ private:
                                     double& y_change);
   tf2::Vector3 calculate_orientation_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
 
+  // Gesture control methods
+  void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  double calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  void send_grasp_goal(float percentage);
+
   // Utility methods
   static double calculate_distance(const geometry_msgs::msg::Pose& p1, const geometry_msgs::msg::Pose& p2);
   static double apply_smoothing(double current, double previous, double factor);
@@ -59,6 +70,7 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr twist_publisher_;
   rclcpp::TimerBase::SharedPtr timeout_timer_;
+  rclcpp_action::Client<ExecuteGesture>::SharedPtr gesture_client_;
 
   // Parameters
   double smoothing_factor_, position_scale_, orientation_scale_;
@@ -72,6 +84,10 @@ private:
   double reference_index_pinky_distance_;
   geometry_msgs::msg::Pose reference_middle_finger_position_;
 
+  // Grasp gesture state
+  double reference_thumb_index_distance_;
+  double last_grasp_percentage_;
+
   // Timing
   std::chrono::steady_clock::time_point continuous_detection_start_;
   std::chrono::steady_clock::time_point last_detection_time_;
@@ -81,6 +97,7 @@ private:
   // MediaPipe hand landmark indices
   static constexpr int HAND_LANDMARK_COUNT = 21;
   static constexpr int WRIST_IDX = 0;
+  static constexpr int THUMB_TIP_IDX = 4;
   static constexpr int INDEX_MCP_IDX = 5;
   static constexpr int MIDDLE_MCP_IDX = 9;
   static constexpr int PINKY_MCP_IDX = 17;
