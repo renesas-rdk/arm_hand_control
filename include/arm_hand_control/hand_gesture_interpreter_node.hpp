@@ -139,9 +139,9 @@ private:
   void reset_joint_positions();
 
   //===== Finger Abstraction Methods =====
-  void set_finger_position(const std::string& finger, const std::string& role, double position);
-  void set_finger_positions(const std::string& finger, double position);
-  void set_all_fingers_except(const std::vector<std::string>& exceptions, double position);
+  void set_finger_position(const std::string& finger, const std::string& role, double percentage);
+  void set_finger_positions(const std::string& finger, double percentage);
+  void set_all_fingers_except(const std::vector<std::string>& exceptions, double percentage);
 
   //===== Gesture Implementation Methods =====
   // Basic hand gestures
@@ -172,6 +172,10 @@ private:
   void spider_man();
   void finger_cross();
   void italian_hand();
+
+  // Debug gestures
+  void debug_finger(const std::string& finger, const std::string& role, double percentage);
+  void parse_and_execute_debug_gesture(const std::string& gesture_command);
 };
 
 }  // namespace arm_hand_control

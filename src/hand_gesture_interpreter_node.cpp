@@ -142,7 +142,9 @@ void HandGestureInterpreter::execute_gesture_action(const std::shared_ptr<GoalHa
   auto feedback = std::make_shared<ExecuteGesture::Feedback>();
   auto result = std::make_shared<ExecuteGesture::Result>();
 
-  RCLCPP_INFO(this->get_logger(), "Executing gesture action: %s", goal->gesture_name.c_str());
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100,
+                       "Executing gesture: %s, duration: %.2f seconds, percentage: %.2f", goal->gesture_name.c_str(),
+                       goal->duration, goal->percentage);
 
   // Store the goal handle for use in transition callbacks
   current_goal_handle_ = goal_handle;
@@ -178,7 +180,7 @@ void HandGestureInterpreter::execute_gesture_action(const std::shared_ptr<GoalHa
   result->success = true;
   result->message = "Gesture executed successfully";
   goal_handle->succeed(result);
-  RCLCPP_INFO(this->get_logger(), "Gesture execution completed successfully");
+  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 100, "Gesture execution completed successfully");
 }
 
 //===== DEMO MODE METHODS =====
@@ -331,9 +333,6 @@ void HandGestureInterpreter::execute_gesture(const std::string& gesture, double 
   // Start the transition with the specified duration
   double transition_time = (duration > 0.0) ? duration : transition_duration_;
 
-  // Make sure we're logging the actual duration being used
-  RCLCPP_INFO(this->get_logger(), "Executing gesture %s with duration: %.2f seconds", gesture.c_str(), transition_time);
-
   start_gesture_transition(transition_time);
 }
 
@@ -350,7 +349,10 @@ void HandGestureInterpreter::prepare_gesture_transition(const std::string& gestu
 
   // Compute target positions based on the requested gesture
   // First reset positions to ensure clean state for gesture calculation
-  reset_joint_positions();
+  if (gesture.find("debug_finger_") != 0)
+  {
+    reset_joint_positions();
+  }
 
   // Special parameter gestures
   if (gesture.find("grasp_") == 0)
@@ -369,6 +371,11 @@ void HandGestureInterpreter::prepare_gesture_transition(const std::string& gestu
       RCLCPP_ERROR(this->get_logger(), "Failed to parse grasp percentage: %s", e.what());
     }
   }
+  // Debug finger gesture
+  else if (gesture.find("debug_finger_") == 0)
+  {
+    parse_and_execute_debug_gesture(gesture);
+  }
   // Basic hand gestures
   else if (gesture == "grasp")
   {
@@ -380,7 +387,7 @@ void HandGestureInterpreter::prepare_gesture_transition(const std::string& gestu
   }
   else if (gesture == "three_finger_grasp")
   {
-    three_finger_grasp(percentage > 0.0 ? percentage : 0.6);
+    three_finger_grasp(percentage > 0.0 ? percentage : 0.5);
   }
   else if (gesture == "open_hand")
   {
@@ -546,7 +553,7 @@ void HandGestureInterpreter::finish_gesture_transition()
 
 //===== FINGER ABSTRACTION METHODS =====
 
-void HandGestureInterpreter::set_finger_position(const std::string& finger, const std::string& role, double position)
+void HandGestureInterpreter::set_finger_position(const std::string& finger, const std::string& role, double percentage)
 {
   auto finger_it = finger_joints_.find(finger);
   if (finger_it != finger_joints_.end())
@@ -556,7 +563,8 @@ void HandGestureInterpreter::set_finger_position(const std::string& finger, cons
     {
       for (const auto& joint_name : role_it->second)
       {
-        joint_positions_[joint_name] = position;
+        joint_positions_[joint_name] = joint_limits_[joint_name] * percentage;
+        ;
       }
     }
   }
@@ -764,14 +772,14 @@ void HandGestureInterpreter::three_finger_grasp(double percentage)
   reset_joint_positions();
 
   // Set thumb, index, and middle fingers
-  set_finger_positions("thumb", percentage);
-  set_finger_positions("index", percentage * 0.8);  // Slightly less closed
-  set_finger_positions("middle", percentage * 0.8);
+  set_finger_position("thumb", "yaw", 1.0);
+  set_finger_position("thumb", "pitch", percentage * 0.8);
+  set_finger_positions("index", percentage);
+  set_finger_positions("middle", percentage);
 
-  // Set ring and pinky fully closed or open depending on percentage
-  double other_percentage = percentage > 0.5 ? 1.0 : 0.0;
-  set_finger_positions("ring", other_percentage);
-  set_finger_positions("pinky", other_percentage);
+  // Set ring and pinky fully closed
+  set_finger_positions("ring", 1.0);
+  set_finger_positions("pinky", 1.0);
 }
 
 // Communication gestures
@@ -1017,6 +1025,116 @@ void HandGestureInterpreter::italian_hand()
         joint_positions_[joint] = joint_limits_[joint] * 0.6;
       }
     }
+  }
+}
+
+// Debug gestures
+void HandGestureInterpreter::debug_finger(const std::string& finger, const std::string& role, double percentage)
+{
+  RCLCPP_INFO(this->get_logger(), "Debug gesture: setting finger '%s', role '%s' to %.1f%%", finger.c_str(),
+              role.c_str(), percentage * 100.0);
+
+  // Check if finger exists
+  auto finger_it = finger_joints_.find(finger);
+  if (finger_it == finger_joints_.end())
+  {
+    RCLCPP_ERROR(this->get_logger(), "Debug gesture: finger '%s' not found. Available fingers:", finger.c_str());
+    for (const auto& f : finger_joints_)
+    {
+      RCLCPP_ERROR(this->get_logger(), "  - %s", f.first.c_str());
+    }
+    return;
+  }
+
+  // Check if role exists for this finger
+  auto role_it = finger_it->second.find(role);
+  if (role_it == finger_it->second.end())
+  {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Debug gesture: role '%s' not found for finger '%s'. Available roles:", role.c_str(), finger.c_str());
+    for (const auto& r : finger_it->second)
+    {
+      RCLCPP_ERROR(this->get_logger(), "  - %s", r.first.c_str());
+    }
+    return;
+  }
+
+  // Apply the percentage to the specified finger and role
+  set_finger_position(finger, role, percentage);
+
+  // Log the joints that were affected
+  RCLCPP_INFO(this->get_logger(), "Debug gesture: affected joints:");
+  for (const auto& joint_name : role_it->second)
+  {
+    double position = joint_positions_[joint_name];
+    double limit = joint_limits_[joint_name];
+    RCLCPP_INFO(this->get_logger(), "  - %s: %.3f rad (%.1f%% of limit %.3f)", joint_name.c_str(), position,
+                (position / limit) * 100.0, limit);
+  }
+}
+
+void HandGestureInterpreter::parse_and_execute_debug_gesture(const std::string& gesture_command)
+{
+  // Expected format: debug_finger_<finger>_<role>_<percentage>
+  // Example: debug_finger_thumb_yaw_50
+
+  std::string prefix = "debug_finger_";
+  if (gesture_command.find(prefix) != 0)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Invalid debug gesture format: %s", gesture_command.c_str());
+    return;
+  }
+
+  std::string params = gesture_command.substr(prefix.length());
+
+  // Split by underscores
+  std::vector<std::string> parts;
+  std::stringstream ss(params);
+  std::string part;
+
+  while (std::getline(ss, part, '_'))
+  {
+    if (!part.empty())
+    {
+      parts.push_back(part);
+    }
+  }
+
+  if (parts.size() != 3)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Debug gesture requires format: debug_finger_<finger>_<role>_<percentage>");
+    RCLCPP_ERROR(this->get_logger(), "Example: debug_finger_thumb_yaw_50");
+    RCLCPP_ERROR(this->get_logger(), "Available fingers:");
+    for (const auto& f : finger_joints_)
+    {
+      RCLCPP_ERROR(this->get_logger(), "  - %s (roles: ", f.first.c_str());
+      for (const auto& r : f.second)
+      {
+        RCLCPP_ERROR(this->get_logger(), "%s ", r.first.c_str());
+      }
+      RCLCPP_ERROR(this->get_logger(), ")");
+    }
+    return;
+  }
+
+  std::string finger = parts[0];
+  std::string role = parts[1];
+
+  try
+  {
+    double percentage_value = std::stod(parts[2]);
+    // Convert percentage (0-100) to fraction (0.0-1.0)
+    double percentage = percentage_value / 100.0;
+
+    // Clamp to valid range
+    percentage = std::max(0.0, std::min(1.0, percentage));
+
+    debug_finger(finger, role, percentage);
+  }
+  catch (const std::exception& e)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Failed to parse percentage in debug gesture: %s", e.what());
+    RCLCPP_ERROR(this->get_logger(), "Percentage should be a number between 0 and 100");
   }
 }
 
