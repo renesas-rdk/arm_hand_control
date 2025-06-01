@@ -317,6 +317,16 @@ bool InspireRH56DexhandNode::send_commands(const std::vector<int>& command_value
     return false;
   }
 
+  // Force transmission of buffered data
+  if (tcdrain(serial_port_) != 0)
+  {
+    RCLCPP_WARN(this->get_logger(), "Failed to drain serial port: %s", strerror(errno));
+  }
+
+  // DexHand might still require a delay after sending commands to ensure they are processed correctly.
+  // This is a workaround for the device's communication protocol.
+  // std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
   return true;
 }
 
