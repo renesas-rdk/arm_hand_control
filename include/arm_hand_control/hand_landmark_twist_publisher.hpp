@@ -85,7 +85,6 @@ private:
   geometry_msgs::msg::Pose reference_middle_finger_position_;
 
   // Grasp gesture state
-  double reference_thumb_index_distance_;
   double last_grasp_percentage_;
 
   // Timing

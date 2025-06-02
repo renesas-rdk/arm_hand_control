@@ -9,7 +9,6 @@ HandLandmarkTwistPublisher::HandLandmarkTwistPublisher()
   : Node("hand_landmark_twist_publisher")
   , has_reference_(false)
   , reference_index_pinky_distance_(0.0)
-  , reference_thumb_index_distance_(0.0)
   , last_grasp_percentage_(-1.0)
   , continuous_detection_start_(std::chrono::steady_clock::now())
   , last_detection_time_(std::chrono::steady_clock::now())
@@ -78,7 +77,6 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
     {
       reference_landmarks_ = msg->poses;
       reference_index_pinky_distance_ = calculate_distance(msg->poses[INDEX_MCP_IDX], msg->poses[PINKY_MCP_IDX]);
-      reference_thumb_index_distance_ = calculate_distance(msg->poses[THUMB_TIP_IDX], msg->poses[INDEX_MCP_IDX]);
       reference_middle_finger_position_ = msg->poses[MIDDLE_MCP_IDX];
       has_reference_ = true;
 
@@ -279,15 +277,17 @@ void HandLandmarkTwistPublisher::process_grasp_gesture(const std::vector<geometr
   }
 
   double current_thumb_index_distance = calculate_thumb_index_distance(landmarks);
+  double current_palm_size = calculate_distance(landmarks[INDEX_MCP_IDX], landmarks[PINKY_MCP_IDX]);
 
-  // Calculate percentage based on distance change from reference
-  // When thumb and index are closer together, percentage should be higher (more closed grasp)
-  double distance_ratio =
-      (reference_thumb_index_distance_ > 0.0) ? (current_thumb_index_distance / reference_thumb_index_distance_) : 1.0;
+  // Calculate percentage based on thumb-index distance relative to current palm size
+  // When thumb and index are closer together relative to palm size, percentage should be higher (more closed grasp)
+  double distance_ratio = (current_palm_size > 0.0) ? (current_thumb_index_distance / current_palm_size) : 1.0;
 
-  // Invert the ratio so closer fingers = higher percentage
-  // Clamp between 0.0 and 1.0 (not 0-100)
-  double grasp_percentage = std::clamp(1.0 - distance_ratio, 0.0, 1.0);
+  // Map the ratio to grasp percentage
+  // Typical open hand: thumb-index distance ~= palm size (ratio ~1.0)
+  // Typical closed grasp: thumb-index distance ~= 0.3 * palm size (ratio ~0.3)
+  // Map ratio 1.0->0.0 (open) and 0.3->1.0 (closed)
+  double grasp_percentage = std::clamp((1.0 - distance_ratio) / 0.7, 0.0, 1.0);
 
   // Only send goal if percentage changed significantly (avoid spam)
   // Use 0.05 (5%) threshold for 0.0-1.0 range

@@ -84,7 +84,6 @@ private:
   geometry_msgs::msg::Pose reference_x_landmark_;
   geometry_msgs::msg::Pose reference_y_landmark_;
   double reference_z_distance_;
-  double reference_thumb_index_distance_;
   double last_grasp_percentage_;
   geometry_msgs::msg::PoseStamped previous_pose_;
   std::chrono::time_point<std::chrono::steady_clock> last_detection_time_;
