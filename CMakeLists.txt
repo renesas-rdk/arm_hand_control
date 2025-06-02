@@ -138,6 +138,19 @@ target_link_libraries(hand_landmark_twist_publisher
   "${cpp_typesupport_target}"
 )
 
+# hand landmark pose publisher
+add_executable(hand_landmark_pose_publisher src/hand_landmark_pose_publisher.cpp)
+ament_target_dependencies(hand_landmark_pose_publisher
+  rclcpp
+  geometry_msgs
+  sensor_msgs
+  tf2
+  rclcpp_action
+)
+target_link_libraries(hand_landmark_pose_publisher
+  "${cpp_typesupport_target}"
+)
+
 # Installation
 install(TARGETS
   hand_gesture_interpreter
@@ -147,6 +160,7 @@ install(TARGETS
   teleop_twist_controller
   gesture_action_client
   hand_landmark_twist_publisher
+  hand_landmark_pose_publisher
   DESTINATION lib/${PROJECT_NAME}
 )
 

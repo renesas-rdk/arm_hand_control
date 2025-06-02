@@ -1,0 +1,118 @@
+#pragma once
+
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <tf2/LinearMath/Vector3.h>
+#include <chrono>
+#include <vector>
+
+// Include the generated action
+#include "arm_hand_control/action/execute_gesture.hpp"
+
+namespace arm_hand_control
+{
+
+/**
+ * Hand Landmark Pose Publisher Node
+ *
+ * This node maps hand landmark positions directly to the arm's end effector pose.
+ * It uses configurable mapping ranges for position and allows smooth transitions
+ * between poses based on hand movement.
+ *
+ * Topics:
+ * - Subscriptions:
+ *   - hand_landmarks (geometry_msgs/PoseArray): Hand landmark positions
+ *
+ * - Publications:
+ *   - target_pose (geometry_msgs/PoseStamped): Target end effector pose
+ *
+ * Parameters:
+ * - smoothing_factor (double): Smoothing factor for pose changes [0.0-1.0]
+ * - position_scale (double): Scale factor for position mapping
+ * - dead_zone_threshold (double): Dead zone threshold for small movements
+ * - camera_width (double): Camera image width for normalization
+ * - camera_height (double): Camera image height for normalization
+ * - target_frame (string): Target frame ID for published poses
+ * - initial_pose_x/y/z (double): Initial end effector position
+ * - initial_pose_roll/pitch/yaw (double): Initial end effector orientation
+ * - max_pose_x/y/z (double): Maximum end effector position
+ * - min_pose_x/y/z (double): Minimum end effector position
+ */
+class HandLandmarkPosePublisher : public rclcpp::Node
+{
+public:
+  HandLandmarkPosePublisher();
+  virtual ~HandLandmarkPosePublisher() = default;
+
+private:
+  //===== Action Type Definitions =====
+  using ExecuteGesture = arm_hand_control::action::ExecuteGesture;
+  using GoalHandleExecuteGesture = rclcpp_action::ClientGoalHandle<ExecuteGesture>;
+
+  //===== MediaPipe Hand Landmark Indices =====
+  static constexpr int WRIST_IDX = 0;
+  static constexpr int THUMB_TIP_IDX = 4;
+  static constexpr int INDEX_MCP_IDX = 5;
+  static constexpr int MIDDLE_MCP_IDX = 9;
+  static constexpr int PINKY_MCP_IDX = 17;
+
+  //===== ROS Communication =====
+  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
+  rclcpp_action::Client<ExecuteGesture>::SharedPtr gesture_client_;
+  rclcpp::TimerBase::SharedPtr timeout_timer_;
+
+  //===== Configuration Parameters =====
+  double smoothing_factor_;
+  double position_scale_;
+  double dead_zone_threshold_;
+  double camera_width_;
+  double camera_height_;
+  std::string target_frame_;
+
+  //===== Pose Mapping Parameters =====
+  double initial_pose_x_, initial_pose_y_, initial_pose_z_;
+  double initial_pose_roll_, initial_pose_pitch_, initial_pose_yaw_;
+  double max_pose_x_, max_pose_y_, max_pose_z_;
+  double min_pose_x_, min_pose_y_, min_pose_z_;
+
+  //===== State Management =====
+  bool has_reference_;
+  std::vector<geometry_msgs::msg::Pose> reference_landmarks_;
+  geometry_msgs::msg::Pose reference_x_landmark_;
+  geometry_msgs::msg::Pose reference_y_landmark_;
+  double reference_z_distance_;
+  double reference_thumb_index_distance_;
+  double last_grasp_percentage_;
+  geometry_msgs::msg::PoseStamped previous_pose_;
+  std::chrono::time_point<std::chrono::steady_clock> last_detection_time_;
+  std::chrono::time_point<std::chrono::steady_clock> continuous_detection_start_;
+
+  //===== Constants =====
+  static constexpr int HAND_LANDMARK_COUNT = 21;
+  static constexpr auto DETECTION_REQUIRED_DURATION = std::chrono::seconds(2);
+  static constexpr auto DETECTION_TIMEOUT_DURATION = std::chrono::seconds(3);
+
+  //===== Callback Methods =====
+  void landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg);
+  void check_detection_timeout();
+
+  //===== Processing Methods =====
+  double calculate_x_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  double calculate_y_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  double calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  double calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  void send_grasp_goal(float percentage);
+
+  //===== Utility Methods =====
+  double calculate_distance(const geometry_msgs::msg::Pose& p1, const geometry_msgs::msg::Pose& p2);
+  double apply_smoothing(double current, double previous, double factor);
+  double apply_dead_zone(double value, double threshold);
+  double clamp_value(double value, double min_val, double max_val);
+  double map_to_range(double normalized_value, double min_range, double max_range, double initial_value);
+};
+
+}  // namespace arm_hand_control
