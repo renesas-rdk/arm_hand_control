@@ -5,7 +5,6 @@
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/pose.hpp>
-#include <tf2/LinearMath/Vector3.h>
 #include <chrono>
 
 #include "arm_hand_control/action/execute_gesture.hpp"
@@ -53,7 +52,6 @@ private:
   double calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
   void calculate_xy_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks, double& x_change,
                                     double& y_change);
-  tf2::Vector3 calculate_orientation_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
 
   // Gesture control methods
   void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks);

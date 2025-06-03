@@ -101,11 +101,10 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
   twist_cmd.linear.x = apply_smoothing(x_change, previous_twist_.linear.x, smoothing_factor_);
   twist_cmd.linear.y = apply_smoothing(y_change, previous_twist_.linear.y, smoothing_factor_);
 
-  // Angular motion
-  tf2::Vector3 orientation_change = calculate_orientation_change(msg->poses);
-  twist_cmd.angular.x = apply_smoothing(orientation_change.x(), previous_twist_.angular.x, smoothing_factor_);
-  twist_cmd.angular.y = apply_smoothing(orientation_change.y(), previous_twist_.angular.y, smoothing_factor_);
-  twist_cmd.angular.z = apply_smoothing(orientation_change.z(), previous_twist_.angular.z, smoothing_factor_);
+  // Angular motion - disabled for now
+  twist_cmd.angular.x = apply_smoothing(0.0, previous_twist_.angular.x, smoothing_factor_);
+  twist_cmd.angular.y = apply_smoothing(0.0, previous_twist_.angular.y, smoothing_factor_);
+  twist_cmd.angular.z = apply_smoothing(0.0, previous_twist_.angular.z, smoothing_factor_);
 
   // Store the previous twist command for smoothing
   previous_twist_ = twist_cmd;
@@ -151,74 +150,6 @@ void HandLandmarkTwistPublisher::calculate_xy_position_change(const std::vector<
 
   x_change = -x_change;  // Invert X for camera convention
   y_change = -y_change;  // Invert Y for camera convention
-}
-
-tf2::Vector3
-HandLandmarkTwistPublisher::calculate_orientation_change(const std::vector<geometry_msgs::msg::Pose>& landmarks)
-{
-  // We need better way to calculate orientation change
-  // Uncomment the following line to disable orientation change calculation
-  return tf2::Vector3(0.0, 0.0, 0.0);
-
-  // Get current and reference triangle points
-  auto get_vector = [](const geometry_msgs::msg::Pose& p) { return tf2::Vector3(p.position.x, p.position.y, 0.0); };
-
-  tf2::Vector3 wrist = get_vector(landmarks[WRIST_IDX]);
-  tf2::Vector3 index_mcp = get_vector(landmarks[INDEX_MCP_IDX]);
-  tf2::Vector3 pinky_mcp = get_vector(landmarks[PINKY_MCP_IDX]);
-
-  tf2::Vector3 ref_wrist = get_vector(reference_landmarks_[WRIST_IDX]);
-  tf2::Vector3 ref_index_mcp = get_vector(reference_landmarks_[INDEX_MCP_IDX]);
-  tf2::Vector3 ref_pinky_mcp = get_vector(reference_landmarks_[PINKY_MCP_IDX]);
-
-  // YAW: Triangle orientation change
-  tf2::Vector3 current_index_pinky = pinky_mcp - index_mcp;
-  tf2::Vector3 ref_index_pinky = ref_pinky_mcp - ref_index_mcp;
-
-  double current_angle = std::atan2(current_index_pinky.y(), current_index_pinky.x());
-  double ref_angle = std::atan2(ref_index_pinky.y(), ref_index_pinky.x());
-  double yaw = current_angle - ref_angle;
-
-  while (yaw > M_PI)
-    yaw -= 2.0 * M_PI;
-  while (yaw < -M_PI)
-    yaw += 2.0 * M_PI;
-
-  // PITCH: Triangle area change
-  tf2::Vector3 current_v1 = index_mcp - wrist;
-  tf2::Vector3 current_v2 = pinky_mcp - wrist;
-  tf2::Vector3 ref_v1 = ref_index_mcp - ref_wrist;
-  tf2::Vector3 ref_v2 = ref_pinky_mcp - ref_wrist;
-
-  double current_area = std::abs(current_v1.x() * current_v2.y() - current_v1.y() * current_v2.x()) * 0.5;
-  double ref_area = std::abs(ref_v1.x() * ref_v2.y() - ref_v1.y() * ref_v2.x()) * 0.5;
-
-  double area_ratio = (ref_area > 1e-6) ? (current_area / ref_area) : 1.0;
-  double pitch = std::asin(std::clamp(1.0 - area_ratio, -1.0, 1.0));
-
-  // ROLL: Triangle aspect ratio change
-  auto normalize_safe = [](tf2::Vector3 v) { return (v.length() > 1e-6) ? v.normalized() : tf2::Vector3(1, 0, 0); };
-
-  tf2::Vector3 current_normalized = normalize_safe(current_index_pinky);
-  tf2::Vector3 ref_normalized = normalize_safe(ref_index_pinky);
-
-  tf2::Vector3 wrist_to_index = index_mcp - wrist;
-  tf2::Vector3 ref_wrist_to_index = ref_index_mcp - ref_wrist;
-
-  double current_height =
-      std::abs(wrist_to_index.x() * current_normalized.y() - wrist_to_index.y() * current_normalized.x());
-  double ref_height =
-      std::abs(ref_wrist_to_index.x() * ref_normalized.y() - ref_wrist_to_index.y() * ref_normalized.x());
-
-  double current_base = current_index_pinky.length();
-  double ref_base = ref_index_pinky.length();
-
-  double current_aspect = (current_base > 1e-6) ? (current_height / current_base) : 0.0;
-  double ref_aspect = (ref_base > 1e-6) ? (ref_height / ref_base) : 0.0;
-
-  double roll = (current_aspect - ref_aspect) * 2.0;
-
-  return tf2::Vector3(roll, pitch, yaw);
 }
 
 double HandLandmarkTwistPublisher::calculate_distance(const geometry_msgs::msg::Pose& p1,
