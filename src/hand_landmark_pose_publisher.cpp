@@ -187,8 +187,8 @@ double HandLandmarkPosePublisher::calculate_x_position_change(const std::vector<
   double x_change_pixels = landmarks[MIDDLE_MCP_IDX].position.x - reference_x_landmark_.position.x;
 
   // Estimate available movement range based on current palm size and camera width
-  double estimated_hand_width = current_palm_size_pixels * 3;  // Rough hand width estimation
-  double available_x_range = camera_width_ - estimated_hand_width;
+  double estimated_hand_width = current_palm_size_pixels * 3;                // Rough hand width estimation
+  double available_x_range = (camera_width_ - estimated_hand_width) * 0.75;  // 75% of camera width for movement
 
   // Normalize movement as percentage of available range
   double x_change_normalized = (available_x_range > 0.0) ? (x_change_pixels / available_x_range) : 0.0;
@@ -205,8 +205,8 @@ double HandLandmarkPosePublisher::calculate_y_position_change(const std::vector<
   double y_change_pixels = landmarks[MIDDLE_MCP_IDX].position.y - reference_y_landmark_.position.y;
 
   // Estimate available movement range based on current palm size and camera height
-  double estimated_hand_height = current_palm_size_pixels * 3;  // Rough hand height estimation
-  double available_y_range = camera_height_ - estimated_hand_height;
+  double estimated_hand_height = current_palm_size_pixels * 3;                 // Rough hand height estimation
+  double available_y_range = (camera_height_ - estimated_hand_height) * 0.75;  // 75% of camera height for movement
 
   // Normalize movement as percentage of available range
   double y_change_normalized = (available_y_range > 0.0) ? (y_change_pixels / available_y_range) : 0.0;
@@ -332,7 +332,7 @@ void HandLandmarkPosePublisher::send_grasp_goal(float percentage)
   auto goal_msg = ExecuteGesture::Goal();
   goal_msg.gesture_name = percentage < 0.2 ? "open_hand" : "three_finger_grasp";
   goal_msg.duration = 0.1f;
-  goal_msg.percentage = percentage > 0.55 ? 0.55f : percentage; // 0.55 is the max for three_finger_grasp
+  goal_msg.percentage = percentage > 0.55 ? 0.55f : percentage;  // 0.55 is the max for three_finger_grasp
 
   auto send_goal_options = rclcpp_action::Client<ExecuteGesture>::SendGoalOptions();
 
