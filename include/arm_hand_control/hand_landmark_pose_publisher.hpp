@@ -4,9 +4,11 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include <tf2/LinearMath/Vector3.h>
+#include <tf2/LinearMath/Quaternion.h>
 #include <chrono>
 #include <vector>
+#include <string>
+#include <memory>
 
 // Include the generated action
 #include "arm_hand_control/action/execute_gesture.hpp"
