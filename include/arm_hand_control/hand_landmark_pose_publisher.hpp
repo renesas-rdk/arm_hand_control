@@ -40,6 +40,7 @@ namespace arm_hand_control
  * - max_pose_x/y/z (double): Maximum end effector position
  * - min_pose_x/y/z (double): Minimum end effector position
  */
+
 class HandLandmarkPosePublisher : public rclcpp::Node
 {
 public:
@@ -92,15 +93,17 @@ private:
   //===== Constants =====
   static constexpr int HAND_LANDMARK_COUNT = 21;
   static constexpr auto DETECTION_REQUIRED_DURATION = std::chrono::seconds(2);
-  static constexpr auto DETECTION_TIMEOUT_DURATION = std::chrono::seconds(3);
+  static constexpr auto DETECTION_TIMEOUT_DURATION = std::chrono::seconds(1);
 
   //===== Callback Methods =====
   void landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg);
   void check_detection_timeout();
 
   //===== Processing Methods =====
-  double calculate_x_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
-  double calculate_y_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  double calculate_x_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks,
+                                     double current_palm_size_pixels);
+  double calculate_y_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks,
+                                     double current_palm_size_pixels);
   double calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
   void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks);
   double calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose>& landmarks);

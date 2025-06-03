@@ -141,9 +141,11 @@ void HandLandmarkPosePublisher::landmark_callback(const geometry_msgs::msg::Pose
   target_pose.header.stamp = this->now();
   target_pose.header.frame_id = target_frame_;
 
-  // Calculate position changes
-  double x_change = calculate_x_position_change(msg->poses);
-  double y_change = calculate_y_position_change(msg->poses);
+  // Calculate position changes with dynamic range estimation
+  double current_palm_size_pixels = calculate_distance(msg->poses[INDEX_MCP_IDX], msg->poses[PINKY_MCP_IDX]);
+
+  double x_change = calculate_x_position_change(msg->poses, current_palm_size_pixels);
+  double y_change = calculate_y_position_change(msg->poses, current_palm_size_pixels);
   double z_change = calculate_z_position_change(msg->poses);
 
   // Apply dead zone
@@ -179,28 +181,40 @@ void HandLandmarkPosePublisher::landmark_callback(const geometry_msgs::msg::Pose
   pose_publisher_->publish(target_pose);
 }
 
-double HandLandmarkPosePublisher::calculate_x_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks)
+double HandLandmarkPosePublisher::calculate_x_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks,
+                                                              double current_palm_size_pixels)
 {
-  double x_change = landmarks[MIDDLE_MCP_IDX].position.x - reference_x_landmark_.position.x;
+  double x_change_pixels = landmarks[MIDDLE_MCP_IDX].position.x - reference_x_landmark_.position.x;
 
-  if (camera_width_ > 0.0)
-  {
-    x_change /= camera_width_;
-  }
+  // Estimate available movement range based on current palm size and camera width
+  double estimated_hand_width = current_palm_size_pixels * 3;  // Rough hand width estimation
+  double available_x_range = camera_width_ - estimated_hand_width;
 
-  return -x_change;  // Invert X for camera convention
+  // Normalize movement as percentage of available range
+  double x_change_normalized = (available_x_range > 0.0) ? (x_change_pixels / available_x_range) : 0.0;
+
+  // Clamp to reasonable movement range
+  x_change_normalized = std::clamp(x_change_normalized, -1.0, 1.0);
+
+  return -x_change_normalized;  // Invert X for camera convention
 }
 
-double HandLandmarkPosePublisher::calculate_y_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks)
+double HandLandmarkPosePublisher::calculate_y_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks,
+                                                              double current_palm_size_pixels)
 {
-  double y_change = landmarks[MIDDLE_MCP_IDX].position.y - reference_y_landmark_.position.y;
+  double y_change_pixels = landmarks[MIDDLE_MCP_IDX].position.y - reference_y_landmark_.position.y;
 
-  if (camera_height_ > 0.0)
-  {
-    y_change /= camera_height_;
-  }
+  // Estimate available movement range based on current palm size and camera height
+  double estimated_hand_height = current_palm_size_pixels * 3;  // Rough hand height estimation
+  double available_y_range = camera_height_ - estimated_hand_height;
 
-  return -y_change;  // Invert Y for camera convention
+  // Normalize movement as percentage of available range
+  double y_change_normalized = (available_y_range > 0.0) ? (y_change_pixels / available_y_range) : 0.0;
+
+  // Clamp to reasonable movement range
+  y_change_normalized = std::clamp(y_change_normalized, -1.0, 1.0);
+
+  return -y_change_normalized;  // Invert Y for camera convention
 }
 
 double HandLandmarkPosePublisher::calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks)
@@ -240,7 +254,7 @@ double HandLandmarkPosePublisher::map_to_range(double normalized_value, double m
 {
   // Map normalized value (-1 to 1) to the specified range around initial value
   double range_size = max_range - min_range;
-  double mapped_value = initial_value + normalized_value * range_size * 0.5;
+  double mapped_value = initial_value + normalized_value * range_size;
   return clamp_value(mapped_value, min_range, max_range);
 }
 
@@ -316,9 +330,9 @@ void HandLandmarkPosePublisher::process_grasp_gesture(const std::vector<geometry
 void HandLandmarkPosePublisher::send_grasp_goal(float percentage)
 {
   auto goal_msg = ExecuteGesture::Goal();
-  goal_msg.gesture_name = percentage < 0.1 ? "open_hand" : "three_finger_grasp";
+  goal_msg.gesture_name = percentage < 0.2 ? "open_hand" : "three_finger_grasp";
   goal_msg.duration = 0.1f;
-  goal_msg.percentage = percentage;
+  goal_msg.percentage = percentage > 0.55 ? 0.55f : percentage; // 0.55 is the max for three_finger_grasp
 
   auto send_goal_options = rclcpp_action::Client<ExecuteGesture>::SendGoalOptions();
 
