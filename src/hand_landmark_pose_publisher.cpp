@@ -56,11 +56,23 @@ HandLandmarkPosePublisher::HandLandmarkPosePublisher()
   min_pose_y_ = get_parameter("min_pose_y").as_double();
   min_pose_z_ = get_parameter("min_pose_z").as_double();
 
+  // Declare and get gripper control parameters
+  declare_parameter("max_gripper_position", 0.06); // in meters
+  declare_parameter("min_gripper_position", 0.0);
+  declare_parameter("max_gripper_effort", 1.0); // in newtons
+  declare_parameter("gripper_command_threshold", 0.05);
+
+  max_gripper_position_ = get_parameter("max_gripper_position").as_double();
+  min_gripper_position_ = get_parameter("min_gripper_position").as_double();
+  max_gripper_effort_ = get_parameter("max_gripper_effort").as_double();
+  gripper_command_threshold_ = get_parameter("gripper_command_threshold").as_double();
+
   // Create ROS2 components
   landmark_subscriber_ = create_subscription<geometry_msgs::msg::PoseArray>(
       "hand_landmarks", 10, std::bind(&HandLandmarkPosePublisher::landmark_callback, this, std::placeholders::_1));
 
   pose_publisher_ = create_publisher<geometry_msgs::msg::PoseStamped>("target_pose", 10);
+  gripper_publisher_ = create_publisher<control_msgs::msg::GripperCommand>("gripper_command", 10);
 
   gesture_client_ = rclcpp_action::create_client<ExecuteGesture>(this, "execute_gesture");
 
@@ -90,6 +102,10 @@ HandLandmarkPosePublisher::HandLandmarkPosePublisher()
   RCLCPP_INFO(get_logger(), "Pose range Y: [%.3f, %.3f]", min_pose_y_, max_pose_y_);
   RCLCPP_INFO(get_logger(), "Pose range Z: [%.3f, %.3f]", min_pose_z_, max_pose_z_);
   RCLCPP_INFO(get_logger(), "Using fixed MediaPipe hand landmark indices for position mapping only");
+  RCLCPP_INFO(get_logger(), "Gripper control parameters:");
+  RCLCPP_INFO(get_logger(), "Position range: [%.3f, %.3f] m", min_gripper_position_, max_gripper_position_);
+  RCLCPP_INFO(get_logger(), "Max effort: %.1f N", max_gripper_effort_);
+  RCLCPP_INFO(get_logger(), "Command threshold: %.3f", gripper_command_threshold_);
 }
 
 void HandLandmarkPosePublisher::landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg)
@@ -300,11 +316,6 @@ double HandLandmarkPosePublisher::calculate_thumb_index_distance(const std::vect
 
 void HandLandmarkPosePublisher::process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks)
 {
-  if (!gesture_client_->wait_for_action_server(std::chrono::milliseconds(10)))
-  {
-    return;  // Action server not available, skip this time
-  }
-
   double current_thumb_index_distance = calculate_thumb_index_distance(landmarks);
   double current_palm_size = calculate_distance(landmarks[INDEX_MCP_IDX], landmarks[PINKY_MCP_IDX]);
 
@@ -318,13 +329,39 @@ void HandLandmarkPosePublisher::process_grasp_gesture(const std::vector<geometry
   // Map ratio 1.0->0.0 (open) and 0.3->1.0 (closed)
   double grasp_percentage = std::clamp((1.0 - distance_ratio) / 0.7, 0.0, 1.0);
 
-  // Only send goal if percentage changed significantly (avoid spam)
-  // Use 0.05 (5%) threshold for 0.0-1.0 range
-  if (std::abs(grasp_percentage - last_grasp_percentage_) > 0.05)
+  // Only send commands if percentage changed significantly (avoid spam)
+  if (std::abs(grasp_percentage - last_grasp_percentage_) > gripper_command_threshold_)
   {
-    send_grasp_goal(static_cast<float>(grasp_percentage));
+    // Send gripper command
+    send_gripper_command(grasp_percentage);
+
+    // Send gesture action (for hand control)
+    if (gesture_client_->wait_for_action_server(std::chrono::milliseconds(10)))
+    {
+      send_grasp_goal(static_cast<float>(grasp_percentage));
+    }
+
     last_grasp_percentage_ = grasp_percentage;
   }
+}
+
+void HandLandmarkPosePublisher::send_gripper_command(double grasp_percentage)
+{
+  auto gripper_msg = control_msgs::msg::GripperCommand();
+
+  // Map grasp percentage to gripper position
+  // grasp_percentage 0.0 = fully open (max position)
+  // grasp_percentage 1.0 = fully closed (min position)
+  gripper_msg.position = max_gripper_position_ - (grasp_percentage * (max_gripper_position_ - min_gripper_position_));
+
+  // Set effort based on how closed the gripper should be
+  // More closed = more effort needed
+  gripper_msg.max_effort = max_gripper_effort_ * (0.3 + 0.7 * grasp_percentage);
+
+  gripper_publisher_->publish(gripper_msg);
+
+  RCLCPP_DEBUG(get_logger(), "Published gripper command: position=%.3f, effort=%.1f", gripper_msg.position,
+               gripper_msg.max_effort);
 }
 
 void HandLandmarkPosePublisher::send_grasp_goal(float percentage)

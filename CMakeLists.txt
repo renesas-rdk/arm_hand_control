@@ -14,6 +14,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(trajectory_msgs REQUIRED)
+find_package(control_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
@@ -89,6 +90,7 @@ ament_target_dependencies(agilex_piper_arm
   std_msgs
   geometry_msgs
   trajectory_msgs
+  control_msgs
   ament_index_cpp
   agilex_piper_controller
   tf2
@@ -144,6 +146,7 @@ ament_target_dependencies(hand_landmark_pose_publisher
   rclcpp
   geometry_msgs
   sensor_msgs
+  control_msgs
   tf2
   rclcpp_action
 )

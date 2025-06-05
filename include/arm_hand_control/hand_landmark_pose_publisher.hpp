@@ -4,6 +4,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <control_msgs/msg/gripper_command.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <chrono>
 #include <vector>
@@ -64,6 +65,7 @@ private:
   //===== ROS Communication =====
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
+  rclcpp::Publisher<control_msgs::msg::GripperCommand>::SharedPtr gripper_publisher_;
   rclcpp_action::Client<ExecuteGesture>::SharedPtr gesture_client_;
   rclcpp::TimerBase::SharedPtr timeout_timer_;
 
@@ -80,6 +82,12 @@ private:
   double initial_pose_roll_, initial_pose_pitch_, initial_pose_yaw_;
   double max_pose_x_, max_pose_y_, max_pose_z_;
   double min_pose_x_, min_pose_y_, min_pose_z_;
+
+  //===== Gripper Control Parameters =====
+  double max_gripper_position_;
+  double min_gripper_position_;
+  double max_gripper_effort_;
+  double gripper_command_threshold_;
 
   //===== State Management =====
   bool has_reference_;
@@ -110,6 +118,7 @@ private:
   void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks);
   double calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose>& landmarks);
   void send_grasp_goal(float percentage);
+  void send_gripper_command(double grasp_percentage);
 
   //===== Utility Methods =====
   double calculate_distance(const geometry_msgs::msg::Pose& p1, const geometry_msgs::msg::Pose& p2);
