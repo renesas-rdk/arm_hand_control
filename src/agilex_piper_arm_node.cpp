@@ -24,7 +24,7 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
   this->declare_parameter<double>("update_frequency", 50.0);
   this->declare_parameter<std::string>("config_file", "config/arm/agilex_piper.yaml");
   this->declare_parameter<bool>("arm_enabled", false);
-  this->declare_parameter<int>("motion_mode", 1);  // 0=Cartesian, 1=Joint
+  this->declare_parameter<int>("motion_mode", MOTION_MODE_JOINT);
   this->declare_parameter<bool>("listen_only", false);
 
   // Get parameter values
@@ -34,13 +34,23 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
   motion_mode_ = this->get_parameter("motion_mode").as_int();
   listen_only_ = this->get_parameter("listen_only").as_bool();
 
+  // Validate parameters
+  if (update_frequency_ <= 0.0 || update_frequency_ > 100.0)
+  {
+    RCLCPP_WARN(this->get_logger(), "Invalid update frequency %f Hz. Using default 50 Hz.", update_frequency_);
+    update_frequency_ = 50.0;
+  }
+
   // Initialize joint names and positions
   joint_names_.reserve(NUM_JOINTS);
   joint_positions_.reserve(NUM_JOINTS);
+  home_positions_.reserve(NUM_JOINTS);
+
   for (size_t i = 1; i <= NUM_JOINTS; ++i)
   {
     joint_names_.emplace_back("joint" + std::to_string(i));
     joint_positions_.emplace_back(0.0);
+    home_positions_.emplace_back(0.0);
   }
 
   // Create publishers
@@ -62,8 +72,40 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
       "piper/gripper_command", 10,
       [this](const control_msgs::msg::GripperCommand::SharedPtr msg) { gripper_command_callback(msg); });
 
+  // Create services
+  enable_arm_srv_ = this->create_service<std_srvs::srv::SetBool>(
+      "piper/enable_arm", [this](const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                 std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
+        enable_arm_service_callback(request, response);
+      });
+
+  home_srv_ = this->create_service<std_srvs::srv::Trigger>(
+      "piper/home",
+      [this](const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+             std::shared_ptr<std_srvs::srv::Trigger::Response> response) { home_service_callback(request, response); });
+
+  emergency_stop_srv_ = this->create_service<std_srvs::srv::Trigger>(
+      "piper/emergency_stop", [this](const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+                                     std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+        emergency_stop_service_callback(request, response);
+      });
+
+  set_mode_srv_ = this->create_service<std_srvs::srv::SetBool>(
+      "piper/set_motion_mode", [this](const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                      std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
+        set_mode_service_callback(request, response);
+      });
+
   // Initialize controller
-  controller_ = std::make_unique<agilex::piper::PiperController>(can_interface_);
+  try
+  {
+    controller_ = std::make_unique<agilex::piper::PiperController>(can_interface_);
+  }
+  catch (const std::exception& e)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Failed to create controller: %s", e.what());
+    throw;
+  }
 
   // Load configuration
   const std::string config_file_path = resolve_config_file_path(get_parameter("config_file").as_string());
@@ -92,6 +134,7 @@ AgilexPiperArmNode::AgilexPiperArmNode(const rclcpp::NodeOptions& options) : Nod
 
   RCLCPP_INFO(this->get_logger(), "Piper controller node initialized");
   RCLCPP_INFO(this->get_logger(), "Using CAN interface: %s", can_interface_.c_str());
+  RCLCPP_INFO(this->get_logger(), "Update frequency: %.1f Hz", update_frequency_);
   if (listen_only_)
   {
     RCLCPP_INFO(this->get_logger(), "Running in listen-only mode. Commands will be received but not executed.");
@@ -112,8 +155,10 @@ bool AgilexPiperArmNode::setup_controller_connection()
 {
   if (!controller_->is_connected())
   {
-    RCLCPP_WARN(this->get_logger(), "Controller not connected. Will apply SDK joint limits when connected.");
-    return false;
+    if (!controller_->connect_port())
+    {
+      return false;
+    }
   }
 
   apply_joint_limits_to_sdk();
@@ -158,7 +203,7 @@ void AgilexPiperArmNode::disable_arm_and_gripper()
   }
 }
 
-bool AgilexPiperArmNode::is_controller_ready() const
+bool AgilexPiperArmNode::is_controller_ready()
 {
   return controller_ && controller_->is_connected();
 }
@@ -217,7 +262,8 @@ bool AgilexPiperArmNode::load_joint_config(const std::string& config_file)
     // Store joint configuration
     joint_config_.clear();
     YAML::Node joints = config["arm_config"]["joints"];
-    for (size_t i = 0; i < joints.size(); i++)
+
+    for (size_t i = 0; i < joints.size() && i < NUM_JOINTS; i++)
     {
       JointConfig joint;
       joint.name = joints[i]["name"].as<std::string>();
@@ -227,7 +273,14 @@ bool AgilexPiperArmNode::load_joint_config(const std::string& config_file)
       joint.default_position = joints[i]["default_position"].as<double>();
 
       joint_config_[joint.name] = joint;
-      RCLCPP_DEBUG(this->get_logger(), "Loaded joint %s: min=%f, max=%f, default=%f", joint.name.c_str(),
+
+      // Use default_position as home position
+      if (i < home_positions_.size())
+      {
+        home_positions_[i] = joint.default_position;
+      }
+
+      RCLCPP_DEBUG(this->get_logger(), "Loaded joint %s: min=%f, max=%f, default/home=%f", joint.name.c_str(),
                    joint.limit_min, joint.limit_max, joint.default_position);
     }
 
@@ -235,8 +288,11 @@ bool AgilexPiperArmNode::load_joint_config(const std::string& config_file)
     if (config["arm_config"]["update_rate"])
     {
       double update_rate = config["arm_config"]["update_rate"].as<double>();
-      update_frequency_ = update_rate;
-      RCLCPP_INFO(this->get_logger(), "Setting update frequency to %f Hz from config", update_frequency_);
+      if (update_rate > 0.0 && update_rate <= 100.0)
+      {
+        update_frequency_ = update_rate;
+        RCLCPP_INFO(this->get_logger(), "Setting update frequency to %f Hz from config", update_frequency_);
+      }
     }
 
     return true;
@@ -304,10 +360,10 @@ AgilexPiperArmNode::on_set_parameters_callback(const std::vector<rclcpp::Paramet
     else if (param.get_name() == "motion_mode")
     {
       const int new_mode = param.as_int();
-      if (new_mode != motion_mode_ && (new_mode == 0 || new_mode == 1))
+      if (new_mode != motion_mode_ && (new_mode == MOTION_MODE_CARTESIAN || new_mode == MOTION_MODE_JOINT))
       {
         motion_mode_ = new_mode;
-        RCLCPP_INFO(this->get_logger(), "Motion mode set to %s", motion_mode_ == 0 ? "Cartesian" : "Joint");
+        RCLCPP_INFO(this->get_logger(), "Motion mode set to %s", motion_mode_ == MOTION_MODE_CARTESIAN ? "Cartesian" : "Joint");
 
         if (!listen_only_)
         {
@@ -318,7 +374,7 @@ AgilexPiperArmNode::on_set_parameters_callback(const std::vector<rclcpp::Paramet
           RCLCPP_INFO(this->get_logger(), "In listen-only mode: motion mode change not applied");
         }
       }
-      else if (new_mode != 0 && new_mode != 1)
+      else if (new_mode != MOTION_MODE_CARTESIAN && new_mode != MOTION_MODE_JOINT)
       {
         result.successful = false;
         result.reason = "Invalid motion mode. Valid values are 0 (Cartesian) and 1 (Joint).";
@@ -361,19 +417,23 @@ void AgilexPiperArmNode::apply_motion_mode()
   // motion_mode_ = 0 (Cartesian mode) or 1 (Joint mode)
   // 100 = speed rate (100%)
   controller_->set_mode(0x01, motion_mode_, 100, 0);
-  RCLCPP_INFO(this->get_logger(), "Set to %s motion mode", motion_mode_ == 0 ? "Cartesian" : "joint");
+  RCLCPP_INFO(this->get_logger(), "Set to %s motion mode", motion_mode_ == MOTION_MODE_CARTESIAN ? "Cartesian" : "joint");
 }
 
 void AgilexPiperArmNode::update_callback()
 {
-  if (!is_controller_ready())
+  bool is_connected = controller_ && controller_->is_connected();
+
+  if (!is_connected)
   {
     static bool connection_attempted = false;
-
     if (!connection_attempted)
     {
-      RCLCPP_WARN(this->get_logger(), "Controller not connected, attempting to connect and apply joint limits");
-      if (controller_->connect_port())
+      RCLCPP_WARN(this->get_logger(), "Controller not connected, attempting to connect");
+
+      bool connect_success = controller_->connect_port();
+
+      if (connect_success)
       {
         RCLCPP_INFO(this->get_logger(), "Controller connected successfully");
         if (!setup_controller_connection())
@@ -395,10 +455,17 @@ void AgilexPiperArmNode::update_callback()
   }
 
   // Publish current state
-  publish_joint_states();
-  publish_gripper_joint_states();
-  publish_end_pose();
-  publish_arm_status();
+  try
+  {
+    publish_joint_states();
+    publish_gripper_joint_states();
+    publish_end_pose();
+    publish_arm_status();
+  }
+  catch (const std::exception& e)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Error in update callback: %s", e.what());
+  }
 }
 
 bool AgilexPiperArmNode::validate_joint_command(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) const
@@ -411,17 +478,59 @@ bool AgilexPiperArmNode::validate_joint_command(const trajectory_msgs::msg::Join
 
   if (msg->joint_names.size() < NUM_JOINTS)
   {
-    RCLCPP_ERROR(this->get_logger(), "Joint trajectory command has fewer than %zu joint names", NUM_JOINTS);
+    RCLCPP_ERROR(this->get_logger(), "Joint trajectory command has fewer than %zu joint names (got %zu)", NUM_JOINTS,
+                 msg->joint_names.size());
     return false;
   }
 
   if (msg->points[0].positions.size() < NUM_JOINTS)
   {
-    RCLCPP_ERROR(this->get_logger(), "Joint trajectory command has fewer than %zu position values", NUM_JOINTS);
+    RCLCPP_ERROR(this->get_logger(), "Joint trajectory command has fewer than %zu position values (got %zu)",
+                 NUM_JOINTS, msg->points[0].positions.size());
     return false;
   }
 
+  // Validate joint names exist in our configuration
+  for (const auto& name : msg->joint_names)
+  {
+    bool found = std::find(joint_names_.begin(), joint_names_.end(), name) != joint_names_.end();
+    if (!found && joint_config_.find(name) == joint_config_.end())
+    {
+      RCLCPP_WARN(this->get_logger(), "Unknown joint name in command: %s", name.c_str());
+    }
+  }
+
   return true;
+}
+
+std::optional<std::vector<double>>
+AgilexPiperArmNode::extract_joint_positions(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg) const
+{
+  if (!validate_joint_command(msg))
+  {
+    return std::nullopt;
+  }
+
+  const auto& point = msg->points[0];
+  std::vector<double> positions(NUM_JOINTS);
+
+  // Find correct joint indices
+  for (size_t i = 0; i < NUM_JOINTS; ++i)
+  {
+    const auto it = std::find(msg->joint_names.begin(), msg->joint_names.end(), joint_names_[i]);
+    if (it != msg->joint_names.end())
+    {
+      size_t idx = std::distance(msg->joint_names.begin(), it);
+      positions[i] = point.positions[idx];
+    }
+    else
+    {
+      RCLCPP_WARN(this->get_logger(), "Joint %s not found in command, using current position", joint_names_[i].c_str());
+      positions[i] = joint_positions_[i];
+    }
+  }
+
+  return positions;
 }
 
 void AgilexPiperArmNode::joint_command_callback(const trajectory_msgs::msg::JointTrajectory::SharedPtr msg)
@@ -439,49 +548,50 @@ void AgilexPiperArmNode::joint_command_callback(const trajectory_msgs::msg::Join
     return;
   }
 
-  if (!validate_joint_command(msg))
+  if (!arm_enabled_)
+  {
+    RCLCPP_WARN(this->get_logger(), "Arm is not enabled. Cannot send joint command.");
+    return;
+  }
+
+  auto positions_opt = extract_joint_positions(msg);
+  if (!positions_opt)
   {
     return;
   }
 
-  const auto& point = msg->points[0];
-
-  // Find correct joint indices
-  std::vector<size_t> joint_indices(NUM_JOINTS);
-  std::iota(joint_indices.begin(), joint_indices.end(), 0);  // Default sequential ordering
-
-  for (size_t i = 0; i < NUM_JOINTS; ++i)
-  {
-    const auto it = std::find(msg->joint_names.begin(), msg->joint_names.end(), joint_names_[i]);
-    if (it != msg->joint_names.end())
-    {
-      joint_indices[i] = std::distance(msg->joint_names.begin(), it);
-    }
-  }
+  const auto& positions = positions_opt.value();
 
   // Convert joint angles from radians to controller format (0.001 degrees)
   std::array<int, NUM_JOINTS> joint_commands;
   for (size_t i = 0; i < NUM_JOINTS; ++i)
   {
-    joint_commands[i] = static_cast<int>(point.positions[joint_indices[i]] * 180.0 / M_PI * 1000.0);
+    joint_commands[i] = static_cast<int>(positions[i] * 180.0 / M_PI * 1000.0);
   }
 
   // Send command to controller
-  if (!controller_->set_joint_angles(joint_commands[0], joint_commands[1], joint_commands[2], joint_commands[3],
-                                     joint_commands[4], joint_commands[5]))
+  try
   {
-    RCLCPP_ERROR(this->get_logger(), "Failed to send joint command to controller");
+    if (!controller_->set_joint_angles(joint_commands[0], joint_commands[1], joint_commands[2], joint_commands[3],
+                                       joint_commands[4], joint_commands[5]))
+    {
+      RCLCPP_ERROR(this->get_logger(), "Failed to send joint command to controller");
+    }
+    else
+    {
+      RCLCPP_DEBUG(this->get_logger(), "Sent joint command to controller: [%d, %d, %d, %d, %d, %d]", joint_commands[0],
+                   joint_commands[1], joint_commands[2], joint_commands[3], joint_commands[4], joint_commands[5]);
+    }
   }
-  else
+  catch (const std::exception& e)
   {
-    RCLCPP_DEBUG(this->get_logger(), "Sent joint command to controller: [%d, %d, %d, %d, %d, %d]", joint_commands[0],
-                 joint_commands[1], joint_commands[2], joint_commands[3], joint_commands[4], joint_commands[5]);
+    RCLCPP_ERROR(this->get_logger(), "Exception sending joint command: %s", e.what());
   }
 }
 
 void AgilexPiperArmNode::pose_command_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
 {
-  if (!controller_ || !controller_->is_connected())
+  if (!is_controller_ready())
   {
     RCLCPP_WARN(this->get_logger(), "Controller not connected. Cannot send pose command.");
     return;
@@ -651,7 +761,8 @@ void AgilexPiperArmNode::publish_arm_status()
   status_msg->data = { static_cast<uint8_t>(status.ctrl_mode),     static_cast<uint8_t>(status.arm_status),
                        static_cast<uint8_t>(status.mode_feed),     static_cast<uint8_t>(status.teach_status),
                        static_cast<uint8_t>(status.motion_status), static_cast<uint8_t>(status.trajectory_num),
-                       static_cast<uint8_t>(status.err_code_comm), static_cast<uint8_t>(status.err_code_angle) };
+                       static_cast<uint8_t>(status.err_code_comm), static_cast<uint8_t>(status.err_code_angle),
+                       static_cast<uint8_t>(arm_enabled_ ? 1 : 0), static_cast<uint8_t>(motion_mode_) };
 
   status_pub_->publish(std::move(status_msg));
 
@@ -663,6 +774,173 @@ void AgilexPiperArmNode::publish_arm_status()
         << ", Communication Error: " << static_cast<int>(status.err_code_comm)
         << ", Angle Error: " << static_cast<int>(status.err_code_angle);
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000, "%s", oss.str().c_str());
+  }
+}
+
+void AgilexPiperArmNode::enable_arm_service_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                                     std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+{
+  if (listen_only_)
+  {
+    response->success = false;
+    response->message = "Cannot enable/disable arm in listen-only mode";
+    return;
+  }
+
+  arm_enabled_ = request->data;
+
+  if (is_controller_ready())
+  {
+    if (arm_enabled_)
+    {
+      enable_arm_and_gripper();
+    }
+    else
+    {
+      disable_arm_and_gripper();
+    }
+    apply_motion_mode();
+    response->success = true;
+    response->message = arm_enabled_ ? "Arm enabled" : "Arm disabled";
+  }
+  else
+  {
+    response->success = false;
+    response->message = "Controller not connected";
+  }
+}
+
+void AgilexPiperArmNode::home_service_callback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+                                               std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+  (void)request;  // Unused parameter
+
+  if (listen_only_)
+  {
+    response->success = false;
+    response->message = "Cannot move to home in listen-only mode";
+    return;
+  }
+
+  if (!is_controller_ready())
+  {
+    response->success = false;
+    response->message = "Controller not connected";
+    return;
+  }
+
+  if (!arm_enabled_)
+  {
+    response->success = false;
+    response->message = "Arm is not enabled";
+    return;
+  }
+
+  response->success = move_to_home_position();
+  response->message = response->success ? "Moving to home position" : "Failed to move to home position";
+}
+
+void AgilexPiperArmNode::emergency_stop_service_callback(const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+                                                         std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+{
+  (void)request;  // Unused parameter
+
+  RCLCPP_WARN(this->get_logger(), "Emergency stop requested!");
+
+  try
+  {
+    perform_emergency_stop();
+    response->success = true;
+    response->message = "Emergency stop executed";
+  }
+  catch (const std::exception& e)
+  {
+    response->success = false;
+    response->message = std::string("Emergency stop failed: ") + e.what();
+  }
+}
+
+void AgilexPiperArmNode::set_mode_service_callback(const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+                                                   std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+{
+  if (listen_only_)
+  {
+    response->success = false;
+    response->message = "Cannot set motion mode in listen-only mode";
+    return;
+  }
+
+  if (!is_controller_ready())
+  {
+    response->success = false;
+    response->message = "Controller not connected";
+    return;
+  }
+
+  // Set motion mode based on request->data: true = Joint mode (1), false = Cartesian mode (0)
+  const int new_mode = request->data ? MOTION_MODE_JOINT : MOTION_MODE_CARTESIAN;
+  motion_mode_ = new_mode;
+
+  try
+  {
+    apply_motion_mode();
+    response->success = true;
+    response->message = std::string("Motion mode set to ") + (motion_mode_ == MOTION_MODE_CARTESIAN ? "Cartesian" : "Joint") + " mode";
+
+    // Update the parameter to reflect the change
+    this->set_parameter(rclcpp::Parameter("motion_mode", motion_mode_));
+
+    RCLCPP_INFO(this->get_logger(), "Motion mode set to %s", motion_mode_ == MOTION_MODE_CARTESIAN ? "Cartesian" : "Joint");
+  }
+  catch (const std::exception& e)
+  {
+    response->success = false;
+    response->message = std::string("Failed to set motion mode: ") + e.what();
+    RCLCPP_ERROR(this->get_logger(), "Failed to set motion mode: %s", e.what());
+  }
+}
+
+bool AgilexPiperArmNode::move_to_home_position()
+{
+  try
+  {
+    // Ensure we're in joint motion mode before moving to home position
+    if (motion_mode_ != MOTION_MODE_JOINT)
+    {
+      RCLCPP_INFO(this->get_logger(), "Switching to joint motion mode for home position movement");
+      motion_mode_ = MOTION_MODE_JOINT;
+      apply_motion_mode();
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    // Convert home positions to controller format
+    std::array<int, NUM_JOINTS> home_commands;
+    for (size_t i = 0; i < NUM_JOINTS; ++i)
+    {
+      home_commands[i] = static_cast<int>(home_positions_[i] * 180.0 / M_PI * 1000.0);
+    }
+
+    bool success = controller_->set_joint_angles(home_commands[0], home_commands[1], home_commands[2], home_commands[3],
+                                         home_commands[4], home_commands[5]);
+
+    return success;
+  }
+  catch (const std::exception& e)
+  {
+    RCLCPP_ERROR(this->get_logger(), "Failed to move to home position: %s", e.what());
+    return false;
+  }
+}
+
+void AgilexPiperArmNode::perform_emergency_stop()
+{
+  // Disable arm immediately
+  arm_enabled_ = false;
+
+  if (controller_ && controller_->is_connected())
+  {
+    controller_->disable_arm();
+    controller_->control_gripper(0, DEFAULT_GRIPPER_EFFORT, GRIPPER_DISABLE_CLEAR, 0x00);
   }
 }
 
