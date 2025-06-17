@@ -8,6 +8,7 @@ This package provides nodes for controlling robotic hands, particularly the Insp
 - Hand gesture interpretation (predefined gestures)
 - Hand landmark interpretation (from hand tracking algorithms)
 - Direct control of the Inspire RH56 Dexhand hardware
+- Pick-and-place operations via action server
 
 ## Nodes
 
@@ -78,6 +79,32 @@ Hardware interface for the Inspire RH56 Dexhand via serial communication.
 - **Hardware Interface**:
   - Communicates with the hand over a serial connection
 
+### 4. Pick-Place Action Server (`pick_place_action_server`)
+
+Provides an action server for executing pick-and-place operations with the robotic arm and gripper.
+
+- **Action Server**:
+  - `pick_place` (arm_hand_control/action/PickPlace) - Execute pick-and-place operations
+
+- **Published Topics**:
+  - `/arm/pose_command` (geometry_msgs/PoseStamped) - Commands for arm end-effector
+  - `/arm/gripper_command` (control_msgs/GripperCommand) - Commands for gripper
+
+- **Subscribed Topics**:
+  - `/arm/current_pose` (geometry_msgs/PoseStamped) - Current end-effector pose
+  - `/arm/joint_states` (sensor_msgs/JointState) - Current joint states
+  - `/arm/status` (std_msgs/UInt8MultiArray) - Arm status information
+
+The action server implements a state machine that sequences through:
+1. Approach pick position
+2. Descend to pick
+3. Close gripper
+4. Lift object
+5. Approach place position
+6. Descend to place
+7. Open gripper
+8. Retreat from place
+
 ## Installation
 
 ```bash
@@ -117,6 +144,11 @@ ros2 launch arm_hand_control hand_gesture_interpreter.launch.py
 ros2 launch arm_hand_control inspire_rh56_dexhand.launch.py
 ```
 
+4. Pick-Place Action Server:
+```bash
+ros2 launch arm_hand_control pick_place_server.launch.py
+```
+
 ### Configuration
 
 Configuration for the robotic hand is stored in YAML files in the `config/hand/` directory.
@@ -145,12 +177,24 @@ Start demo mode to cycle through all gestures:
 ros2 topic pub /hand_gesture std_msgs/String "data: 'demo_start'"
 ```
 
+Send a pick-and-place action goal (using command line):
+```bash
+ros2 action send_goal /pick_place arm_hand_control/action/PickPlace \
+  "{pick_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.2, y: 0.0, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
+   place_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.3, y: 0.1, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
+   approach_height: 0.07, gripper_open_position: 0.03, gripper_closed_position: 0.01, gripper_force: 1.0}"
+```
+
 ## Dependencies
 
 - ROS 2
 - sensor_msgs
 - std_msgs
 - geometry_msgs
+- control_msgs
+- trajectory_msgs
+- tf2
+- tf2_geometry_msgs
 - yaml-cpp
 - ament_index_cpp
 

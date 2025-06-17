@@ -20,7 +20,7 @@
   <depend>std_msgs</depend>
   <depend>trajectory_msgs</depend>
   <depend>control_msgs</depend>
-  <depend>action_msgs</depend>
+  <depend>std_srvs</depend>
 
   <!-- External dependencies -->
   <depend>yaml-cpp</depend>
@@ -28,7 +28,6 @@
 
   <!-- TF dependencies -->
   <depend>tf2</depend>
-  <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
 
   <!-- Specific controller package -->

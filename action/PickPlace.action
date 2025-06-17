@@ -1,0 +1,16 @@
+# Goal definition
+geometry_msgs/PoseStamped pick_pose        # Target pose for picking up object
+geometry_msgs/PoseStamped place_pose       # Target pose for placing object
+float64 approach_height 0.1                # Height above pick/place poses for approach (meters)
+float64 gripper_open_position 0.06         # Gripper position when open (meters)
+float64 gripper_closed_position 0.0        # Gripper position when closed (meters)
+float64 gripper_force 1.0                  # Gripper force in Newtons
+---
+# Result definition
+bool success                               # Whether the pick-and-place succeeded
+string message                             # Descriptive message (error details if failed)
+---
+# Feedback definition
+string stage                               # Current stage of operation
+float32 progress                           # Progress percentage (0.0 to 1.0)
+geometry_msgs/PoseStamped current_pose     # Current end-effector pose
