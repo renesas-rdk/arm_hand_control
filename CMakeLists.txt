@@ -18,17 +18,18 @@ find_package(control_msgs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-find_package(action_msgs REQUIRED)
 find_package(agilex_piper_controller REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
-find_package(tf2_ros REQUIRED)
 find_package(std_srvs REQUIRED)
 
-# Generate ROS interfaces
+# Generate actions
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteGesture.action"
-  DEPENDENCIES builtin_interfaces action_msgs
+  "action/PickPlace.action"
+  DEPENDENCIES
+  geometry_msgs
+  control_msgs
 )
 
 # Include directories
@@ -97,7 +98,6 @@ ament_target_dependencies(agilex_piper_arm
   agilex_piper_controller
   tf2
   tf2_geometry_msgs
-  tf2_ros
 )
 target_link_libraries(agilex_piper_arm
   ${YAML_CPP_LIBRARIES}
@@ -156,6 +156,32 @@ target_link_libraries(hand_landmark_pose_publisher
   "${cpp_typesupport_target}"
 )
 
+# pick place action server
+add_executable(pick_place_action_server
+  src/pick_place_action_server.cpp
+)
+
+target_include_directories(pick_place_action_server PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+target_compile_features(pick_place_action_server PUBLIC c_std_99 cxx_std_17)
+
+ament_target_dependencies(pick_place_action_server
+  rclcpp
+  rclcpp_action
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  control_msgs
+  tf2
+  tf2_geometry_msgs
+)
+
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(pick_place_action_server "${cpp_typesupport_target}")
+
 # Installation
 install(TARGETS
   hand_gesture_interpreter
@@ -166,6 +192,7 @@ install(TARGETS
   gesture_action_client
   hand_landmark_twist_publisher
   hand_landmark_pose_publisher
+  pick_place_action_server
   DESTINATION lib/${PROJECT_NAME}
 )
 
