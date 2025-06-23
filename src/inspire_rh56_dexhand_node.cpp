@@ -1,14 +1,32 @@
+// ********************************************************************************************************************
+// Copyright [2025] Renesas Electronics Corporation and/or its licensors. All Rights Reserved.
+//
+// The contents of this file (the "contents") are proprietary and confidential to Renesas Electronics Corporation
+// and/or its licensors ("Renesas") and subject to statutory and contractual protections.
+//
+// Unless otherwise expressly agreed in writing between Renesas and you: 1) you may not use, copy, modify, distribute,
+// display, or perform the contents; 2) you may not use any name or mark of Renesas for advertising or publicity
+// purposes or in connection with your use of the contents; 3) RENESAS MAKES NO WARRANTY OR REPRESENTATIONS ABOUT THE
+// SUITABILITY OF THE CONTENTS FOR ANY PURPOSE; THE CONTENTS ARE PROVIDED "AS IS" WITHOUT ANY EXPRESS OR IMPLIED
+// WARRANTY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+// NON-INFRINGEMENT; AND 4) RENESAS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, OR CONSEQUENTIAL DAMAGES,
+// INCLUDING DAMAGES RESULTING FROM LOSS OF USE, DATA, OR PROJECTS, WHETHER IN AN ACTION OF CONTRACT OR TORT, ARISING
+// OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE CONTENTS. Third-party contents included in this file may
+// be subject to different terms.
+// ********************************************************************************************************************
 #include "arm_hand_control/inspire_rh56_dexhand_node.hpp"
-#include <ament_index_cpp/get_package_share_directory.hpp>
-#include <filesystem>
+
+#include <errno.h>
 #include <fcntl.h>
+#include <string.h>
 #include <termios.h>
 #include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <algorithm>
-#include <numeric>
 #include <yaml-cpp/yaml.h>
+
+#include <algorithm>
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <filesystem>
+#include <numeric>
 
 namespace arm_hand_control
 {
@@ -30,31 +48,28 @@ InspireRH56DexhandNode::InspireRH56DexhandNode() : Node("inspire_rh56_dexhand_no
   command_threshold_ = get_parameter("command_threshold").as_int();
 
   // Make the path absolute if it's relative
-  if (!std::filesystem::path(config_file).is_absolute())
-  {
+  if (!std::filesystem::path(config_file).is_absolute()) {
     std::string pkg_path = ament_index_cpp::get_package_share_directory("arm_hand_control");
     config_file = pkg_path + "/" + config_file;
   }
 
   // Load joint configuration
-  if (!load_joint_config(config_file))
-  {
-    RCLCPP_ERROR(this->get_logger(), "Failed to load joint configuration from %s", config_file.c_str());
+  if (!load_joint_config(config_file)) {
+    RCLCPP_ERROR(
+      this->get_logger(), "Failed to load joint configuration from %s", config_file.c_str());
     throw std::runtime_error("Failed to load joint configuration");
   }
 
   // Initialize serial port
-  if (!init_serial(serial_port, baudrate))
-  {
+  if (!init_serial(serial_port, baudrate)) {
     RCLCPP_ERROR(this->get_logger(), "Failed to initialize serial port %s", serial_port.c_str());
     throw std::runtime_error("Failed to initialize serial port");
   }
 
   // Send TWO gesture command to initialize the hand
-  unsigned char TWO[] = { 235, 144, 1, 15, 18, 206, 5, 0, 0, 0, 0, 192, 3, 192, 3, 45, 0, 0, 0, 168 };
+  unsigned char TWO[] = {235, 144, 1, 15, 18, 206, 5, 0, 0, 0, 0, 192, 3, 192, 3, 45, 0, 0, 0, 168};
   int bytes_written = write(serial_port_, TWO, sizeof(TWO));
-  if (bytes_written < 0)
-  {
+  if (bytes_written < 0) {
     RCLCPP_ERROR(this->get_logger(), "Failed to send TWO gesture command: %s", strerror(errno));
     close_serial();
     throw std::runtime_error("Failed to send TWO gesture command");
@@ -65,48 +80,49 @@ InspireRH56DexhandNode::InspireRH56DexhandNode() : Node("inspire_rh56_dexhand_no
 
   // Create joint state subscriber
   joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
-      "joint_states", qos, std::bind(&InspireRH56DexhandNode::joint_state_callback, this, std::placeholders::_1));
+    "joint_states", qos,
+    std::bind(&InspireRH56DexhandNode::joint_state_callback, this, std::placeholders::_1));
 
   // Initialize with -1 values
   last_command_values_.resize(joints_.size(), -1);
 
-  RCLCPP_INFO(this->get_logger(), "InspireRH56DexhandNode initialized with %ld joints", joints_.size());
-  RCLCPP_INFO(this->get_logger(), "Listening for joint_states and sending commands to %s", serial_port.c_str());
-  RCLCPP_INFO(this->get_logger(), "Command threshold: %d/1000 (minimum change to send new commands)",
-              command_threshold_);
+  RCLCPP_INFO(
+    this->get_logger(), "InspireRH56DexhandNode initialized with %ld joints", joints_.size());
+  RCLCPP_INFO(
+    this->get_logger(), "Listening for joint_states and sending commands to %s",
+    serial_port.c_str());
+  RCLCPP_INFO(
+    this->get_logger(), "Command threshold: %d/1000 (minimum change to send new commands)",
+    command_threshold_);
 }
 
-InspireRH56DexhandNode::~InspireRH56DexhandNode()
-{
-  close_serial();
-}
+InspireRH56DexhandNode::~InspireRH56DexhandNode() { close_serial(); }
 
 void InspireRH56DexhandNode::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
 {
-  RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Received joint state message");
+  RCLCPP_INFO_THROTTLE(
+    this->get_logger(), *this->get_clock(), 1000, "Received joint state message");
 
   // Check if the message contains the expected number of joints
-  if (msg->name.size() != joints_.size())
-  {
-    RCLCPP_ERROR(this->get_logger(), "Received joint state message with unexpected number of joints");
+  if (msg->name.size() != joints_.size()) {
+    RCLCPP_ERROR(
+      this->get_logger(), "Received joint state message with unexpected number of joints");
     return;
   }
   // Check if the message contains the expected joint names
   std::set<std::string> received_joints(msg->name.begin(), msg->name.end());
-  for (const auto& joint : joints_)
-  {
-    if (received_joints.find(joint.name) == received_joints.end())
-    {
-      RCLCPP_ERROR(this->get_logger(), "Required joint '%s' not found in received joint state message",
-                   joint.name.c_str());
+  for (const auto & joint : joints_) {
+    if (received_joints.find(joint.name) == received_joints.end()) {
+      RCLCPP_ERROR(
+        this->get_logger(), "Required joint '%s' not found in received joint state message",
+        joint.name.c_str());
       return;
     }
   }
 
   // Create map of joint positions
   std::map<std::string, double> joint_positions;
-  for (size_t i = 0; i < msg->name.size(); i++)
-  {
+  for (size_t i = 0; i < msg->name.size(); i++) {
     joint_positions[msg->name[i]] = msg->position[i];
   }
 
@@ -114,29 +130,26 @@ void InspireRH56DexhandNode::joint_state_callback(const sensor_msgs::msg::JointS
   send_commands(command_values);
 }
 
-bool InspireRH56DexhandNode::load_joint_config(const std::string& config_file)
+bool InspireRH56DexhandNode::load_joint_config(const std::string & config_file)
 {
-  try
-  {
+  try {
     YAML::Node config = YAML::LoadFile(config_file);
 
-    if (!config["hand_config"] || !config["hand_config"]["joints"])
-    {
+    if (!config["hand_config"] || !config["hand_config"]["joints"]) {
       RCLCPP_ERROR(this->get_logger(), "Invalid configuration file format");
       return false;
     }
 
     std::map<std::string, size_t> finger_command_indices = {
-      { "pinky", 0 },   // little finger
-      { "ring", 1 },    // ring finger
-      { "middle", 2 },  // middle finger
-      { "index", 3 },   // index finger
-      { "thumb", 4 }    // thumb (role: pitch for bending)
+      {"pinky", 0},   // little finger
+      {"ring", 1},    // ring finger
+      {"middle", 2},  // middle finger
+      {"index", 3},   // index finger
+      {"thumb", 4}    // thumb (role: pitch for bending)
     };
 
     YAML::Node joints = config["hand_config"]["joints"];
-    for (size_t i = 0; i < joints.size(); i++)
-    {
+    for (size_t i = 0; i < joints.size(); i++) {
       JointInfo joint;
       joint.name = joints[i]["name"].as<std::string>();
       joint.finger = joints[i]["finger"].as<std::string>();
@@ -145,19 +158,15 @@ bool InspireRH56DexhandNode::load_joint_config(const std::string& config_file)
       joint.default_position = joints[i]["default_position"].as<double>();
 
       // Set command index based on finger and role
-      if (joint.name == "thumb_proximal_yaw_joint")
-      {
+      if (joint.name == "thumb_proximal_yaw_joint") {
         // Thumb yaw (rotation) is at index 5
         joint.command_index = 5;
-      }
-      else if (finger_command_indices.find(joint.finger) != finger_command_indices.end())
-      {
+      } else if (finger_command_indices.find(joint.finger) != finger_command_indices.end()) {
         joint.command_index = finger_command_indices[joint.finger];
-      }
-      else
-      {
-        RCLCPP_WARN(this->get_logger(), "Unknown finger type: %s for joint %s", joint.finger.c_str(),
-                    joint.name.c_str());
+      } else {
+        RCLCPP_WARN(
+          this->get_logger(), "Unknown finger type: %s for joint %s", joint.finger.c_str(),
+          joint.name.c_str());
         continue;
       }
 
@@ -165,26 +174,22 @@ bool InspireRH56DexhandNode::load_joint_config(const std::string& config_file)
     }
 
     return true;
-  }
-  catch (const std::exception& e)
-  {
+  } catch (const std::exception & e) {
     RCLCPP_ERROR(this->get_logger(), "Error loading configuration: %s", e.what());
     return false;
   }
 }
 
-bool InspireRH56DexhandNode::init_serial(const std::string& port, int baudrate)
+bool InspireRH56DexhandNode::init_serial(const std::string & port, int baudrate)
 {
   serial_port_ = open(port.c_str(), O_RDWR);
-  if (serial_port_ < 0)
-  {
+  if (serial_port_ < 0) {
     RCLCPP_ERROR(this->get_logger(), "Error opening serial port: %s", strerror(errno));
     return false;
   }
 
   struct termios tty;
-  if (tcgetattr(serial_port_, &tty) != 0)
-  {
+  if (tcgetattr(serial_port_, &tty) != 0) {
     RCLCPP_ERROR(this->get_logger(), "Error from tcgetattr: %s", strerror(errno));
     close_serial();
     return false;
@@ -214,8 +219,7 @@ bool InspireRH56DexhandNode::init_serial(const std::string& port, int baudrate)
 
   // Set baud rate
   speed_t baud;
-  switch (baudrate)
-  {
+  switch (baudrate) {
     case 19200:
       baud = B19200;
       break;
@@ -234,8 +238,7 @@ bool InspireRH56DexhandNode::init_serial(const std::string& port, int baudrate)
   cfsetispeed(&tty, baud);
   cfsetospeed(&tty, baud);
 
-  if (tcsetattr(serial_port_, TCSANOW, &tty) != 0)
-  {
+  if (tcsetattr(serial_port_, TCSANOW, &tty) != 0) {
     RCLCPP_ERROR(this->get_logger(), "Error from tcsetattr: %s", strerror(errno));
     close_serial();
     return false;
@@ -247,24 +250,21 @@ bool InspireRH56DexhandNode::init_serial(const std::string& port, int baudrate)
 
 void InspireRH56DexhandNode::close_serial()
 {
-  if (serial_port_ >= 0)
-  {
+  if (serial_port_ >= 0) {
     close(serial_port_);
     serial_port_ = -1;
   }
 }
 
-std::vector<int>
-InspireRH56DexhandNode::convert_positions_to_commands(const std::map<std::string, double>& joint_positions)
+std::vector<int> InspireRH56DexhandNode::convert_positions_to_commands(
+  const std::map<std::string, double> & joint_positions)
 {
   std::vector<int> command_values(joints_.size(), 0);
 
-  for (const auto& joint : joints_)
-  {
+  for (const auto & joint : joints_) {
     // Check if the joint is in the received message
     auto it = joint_positions.find(joint.name);
-    if (it == joint_positions.end())
-    {
+    if (it == joint_positions.end()) {
       // Joint not in message, use no response value
       command_values[joint.command_index] = -1;
       continue;
@@ -277,13 +277,11 @@ InspireRH56DexhandNode::convert_positions_to_commands(const std::map<std::string
 
     // If the change is less than the threshold and we have a previous valid command,
     // use -1 to tell the servo to keep its current position
-    if (last_command_values_[joint.command_index] != -1 &&
-        std::abs(value - last_command_values_[joint.command_index]) <= command_threshold_)
-    {
+    if (
+      last_command_values_[joint.command_index] != -1 &&
+      std::abs(value - last_command_values_[joint.command_index]) <= command_threshold_) {
       command_values[joint.command_index] = -1;  // No change needed
-    }
-    else
-    {
+    } else {
       command_values[joint.command_index] = value;
       last_command_values_[joint.command_index] = value;
     }
@@ -292,15 +290,14 @@ InspireRH56DexhandNode::convert_positions_to_commands(const std::map<std::string
   return command_values;
 }
 
-bool InspireRH56DexhandNode::send_commands(const std::vector<int>& command_values)
+bool InspireRH56DexhandNode::send_commands(const std::vector<int> & command_values)
 {
   // Command packet format (Ref to the device's protocol manual):
   // [235, 144, 1, 15, 18, 206, 5, val1_lo, val1_hi, val2_lo, val2_hi, ..., checksum]
-  std::vector<unsigned char> cmd = { 235, 144, 1, 15, 18, 206, 5 };
+  std::vector<unsigned char> cmd = {235, 144, 1, 15, 18, 206, 5};
 
   // Add command values
-  for (int val : command_values)
-  {
+  for (int val : command_values) {
     cmd.push_back(val & 0xff);           // low byte
     cmd.push_back((val & 0xff00) >> 8);  // high byte
   }
@@ -311,15 +308,13 @@ bool InspireRH56DexhandNode::send_commands(const std::vector<int>& command_value
 
   // Send command via serial port
   ssize_t bytes_written = write(serial_port_, cmd.data(), cmd.size());
-  if (bytes_written != static_cast<ssize_t>(cmd.size()))
-  {
+  if (bytes_written != static_cast<ssize_t>(cmd.size())) {
     RCLCPP_ERROR(this->get_logger(), "Failed to write to serial port: %s", strerror(errno));
     return false;
   }
 
   // Force transmission of buffered data
-  if (tcdrain(serial_port_) != 0)
-  {
+  if (tcdrain(serial_port_) != 0) {
     RCLCPP_WARN(this->get_logger(), "Failed to drain serial port: %s", strerror(errno));
   }
 
@@ -332,7 +327,7 @@ bool InspireRH56DexhandNode::send_commands(const std::vector<int>& command_value
 
 }  // namespace arm_hand_control
 
-int main(int argc, char* argv[])
+int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<arm_hand_control::InspireRH56DexhandNode>();

@@ -1,17 +1,34 @@
+// ********************************************************************************************************************
+// Copyright [2025] Renesas Electronics Corporation and/or its licensors. All Rights Reserved.
+//
+// The contents of this file (the "contents") are proprietary and confidential to Renesas Electronics Corporation
+// and/or its licensors ("Renesas") and subject to statutory and contractual protections.
+//
+// Unless otherwise expressly agreed in writing between Renesas and you: 1) you may not use, copy, modify, distribute,
+// display, or perform the contents; 2) you may not use any name or mark of Renesas for advertising or publicity
+// purposes or in connection with your use of the contents; 3) RENESAS MAKES NO WARRANTY OR REPRESENTATIONS ABOUT THE
+// SUITABILITY OF THE CONTENTS FOR ANY PURPOSE; THE CONTENTS ARE PROVIDED "AS IS" WITHOUT ANY EXPRESS OR IMPLIED
+// WARRANTY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+// NON-INFRINGEMENT; AND 4) RENESAS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, OR CONSEQUENTIAL DAMAGES,
+// INCLUDING DAMAGES RESULTING FROM LOSS OF USE, DATA, OR PROJECTS, WHETHER IN AN ACTION OF CONTRACT OR TORT, ARISING
+// OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE CONTENTS. Third-party contents included in this file may
+// be subject to different terms.
+// ********************************************************************************************************************
 #include "arm_hand_control/hand_landmark_twist_publisher.hpp"
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
 
 namespace arm_hand_control
 {
 
 HandLandmarkTwistPublisher::HandLandmarkTwistPublisher()
-  : Node("hand_landmark_twist_publisher")
-  , has_reference_(false)
-  , reference_index_pinky_distance_(0.0)
-  , last_grasp_percentage_(-1.0)
-  , continuous_detection_start_(std::chrono::steady_clock::now())
-  , last_detection_time_(std::chrono::steady_clock::now())
+: Node("hand_landmark_twist_publisher"),
+  has_reference_(false),
+  reference_index_pinky_distance_(0.0),
+  last_grasp_percentage_(-1.0),
+  continuous_detection_start_(std::chrono::steady_clock::now()),
+  last_detection_time_(std::chrono::steady_clock::now())
 {
   // Declare and get parameters
   declare_parameter("smoothing_factor", 0.8);
@@ -34,28 +51,30 @@ HandLandmarkTwistPublisher::HandLandmarkTwistPublisher()
 
   // Create ROS2 components
   landmark_subscriber_ = create_subscription<geometry_msgs::msg::PoseArray>(
-      "hand_landmarks", 10, std::bind(&HandLandmarkTwistPublisher::landmark_callback, this, std::placeholders::_1));
+    "hand_landmarks", 10,
+    std::bind(&HandLandmarkTwistPublisher::landmark_callback, this, std::placeholders::_1));
 
   twist_publisher_ = create_publisher<geometry_msgs::msg::Twist>("pose/cmd_vel", 10);
 
   gesture_client_ = rclcpp_action::create_client<ExecuteGesture>(this, "execute_gesture");
 
-  timeout_timer_ = create_wall_timer(std::chrono::milliseconds(100),
-                                     std::bind(&HandLandmarkTwistPublisher::check_detection_timeout, this));
+  timeout_timer_ = create_wall_timer(
+    std::chrono::milliseconds(100),
+    std::bind(&HandLandmarkTwistPublisher::check_detection_timeout, this));
 
   RCLCPP_INFO(get_logger(), "Hand Landmark Twist Publisher initialized");
 }
 
-void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg)
+void HandLandmarkTwistPublisher::landmark_callback(
+  const geometry_msgs::msg::PoseArray::SharedPtr msg)
 {
   auto current_time = std::chrono::steady_clock::now();
 
-  if (msg->poses.size() != HAND_LANDMARK_COUNT)
-  {
-    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "Expected %d landmarks, got %zu", HAND_LANDMARK_COUNT,
-                         msg->poses.size());
-    if (!has_reference_)
-    {
+  if (msg->poses.size() != HAND_LANDMARK_COUNT) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000, "Expected %d landmarks, got %zu", HAND_LANDMARK_COUNT,
+      msg->poses.size());
+    if (!has_reference_) {
       continuous_detection_start_ = current_time;
     }
     return;
@@ -64,24 +83,23 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
   last_detection_time_ = current_time;
 
   // Establish reference if needed
-  if (!has_reference_)
-  {
+  if (!has_reference_) {
     auto time_since_start = current_time - continuous_detection_start_;
-    if (time_since_start > std::chrono::seconds(5))
-    {
+    if (time_since_start > std::chrono::seconds(5)) {
       continuous_detection_start_ = current_time;
     }
 
     auto detection_duration = current_time - continuous_detection_start_;
-    if (detection_duration >= DETECTION_REQUIRED_DURATION)
-    {
+    if (detection_duration >= DETECTION_REQUIRED_DURATION) {
       reference_landmarks_ = msg->poses;
-      reference_index_pinky_distance_ = calculate_distance(msg->poses[INDEX_MCP_IDX], msg->poses[PINKY_MCP_IDX]);
+      reference_index_pinky_distance_ =
+        calculate_distance(msg->poses[INDEX_MCP_IDX], msg->poses[PINKY_MCP_IDX]);
       reference_middle_finger_position_ = msg->poses[MIDDLE_MCP_IDX];
       has_reference_ = true;
 
-      RCLCPP_INFO(get_logger(), "Reference established after %.1f seconds",
-                  std::chrono::duration<double>(detection_duration).count());
+      RCLCPP_INFO(
+        get_logger(), "Reference established after %.1f seconds",
+        std::chrono::duration<double>(detection_duration).count());
     }
     return;
   }
@@ -110,12 +128,18 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
   previous_twist_ = twist_cmd;
 
   // Apply scaling and limits
-  twist_cmd.linear.x = clamp_value(twist_cmd.linear.x * position_scale_, -max_twist_linear_, max_twist_linear_);
-  twist_cmd.linear.y = clamp_value(twist_cmd.linear.y * position_scale_, -max_twist_linear_, max_twist_linear_);
-  twist_cmd.linear.z = clamp_value(twist_cmd.linear.z * position_scale_, -max_twist_linear_, max_twist_linear_);
-  twist_cmd.angular.x = clamp_value(twist_cmd.angular.x * orientation_scale_, -max_twist_angular_, max_twist_angular_);
-  twist_cmd.angular.y = clamp_value(twist_cmd.angular.y * orientation_scale_, -max_twist_angular_, max_twist_angular_);
-  twist_cmd.angular.z = clamp_value(twist_cmd.angular.z * orientation_scale_, -max_twist_angular_, max_twist_angular_);
+  twist_cmd.linear.x =
+    clamp_value(twist_cmd.linear.x * position_scale_, -max_twist_linear_, max_twist_linear_);
+  twist_cmd.linear.y =
+    clamp_value(twist_cmd.linear.y * position_scale_, -max_twist_linear_, max_twist_linear_);
+  twist_cmd.linear.z =
+    clamp_value(twist_cmd.linear.z * position_scale_, -max_twist_linear_, max_twist_linear_);
+  twist_cmd.angular.x =
+    clamp_value(twist_cmd.angular.x * orientation_scale_, -max_twist_angular_, max_twist_angular_);
+  twist_cmd.angular.y =
+    clamp_value(twist_cmd.angular.y * orientation_scale_, -max_twist_angular_, max_twist_angular_);
+  twist_cmd.angular.z =
+    clamp_value(twist_cmd.angular.z * orientation_scale_, -max_twist_angular_, max_twist_angular_);
 
   // Apply dead zone and publish
   twist_cmd.linear.x = apply_dead_zone(twist_cmd.linear.x, dead_zone_threshold_);
@@ -128,22 +152,23 @@ void HandLandmarkTwistPublisher::landmark_callback(const geometry_msgs::msg::Pos
   twist_publisher_->publish(twist_cmd);
 }
 
-double HandLandmarkTwistPublisher::calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks)
+double HandLandmarkTwistPublisher::calculate_z_position_change(
+  const std::vector<geometry_msgs::msg::Pose> & landmarks)
 {
   double current_distance = calculate_distance(landmarks[INDEX_MCP_IDX], landmarks[PINKY_MCP_IDX]);
   double distance_change = reference_index_pinky_distance_ - current_distance;
 
-  return (reference_index_pinky_distance_ > 0.0) ? distance_change / reference_index_pinky_distance_ : 0.0;
+  return (reference_index_pinky_distance_ > 0.0) ? distance_change / reference_index_pinky_distance_
+                                                 : 0.0;
 }
 
-void HandLandmarkTwistPublisher::calculate_xy_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks,
-                                                              double& x_change, double& y_change)
+void HandLandmarkTwistPublisher::calculate_xy_position_change(
+  const std::vector<geometry_msgs::msg::Pose> & landmarks, double & x_change, double & y_change)
 {
   x_change = landmarks[MIDDLE_MCP_IDX].position.x - reference_middle_finger_position_.position.x;
   y_change = landmarks[MIDDLE_MCP_IDX].position.y - reference_middle_finger_position_.position.y;
 
-  if (camera_width_ > 0.0 && camera_height_ > 0.0)
-  {
+  if (camera_width_ > 0.0 && camera_height_ > 0.0) {
     x_change /= camera_width_;
     y_change /= camera_height_;
   }
@@ -152,8 +177,8 @@ void HandLandmarkTwistPublisher::calculate_xy_position_change(const std::vector<
   y_change = -y_change;  // Invert Y for camera convention
 }
 
-double HandLandmarkTwistPublisher::calculate_distance(const geometry_msgs::msg::Pose& p1,
-                                                      const geometry_msgs::msg::Pose& p2)
+double HandLandmarkTwistPublisher::calculate_distance(
+  const geometry_msgs::msg::Pose & p1, const geometry_msgs::msg::Pose & p2)
 {
   double dx = p1.position.x - p2.position.x;
   double dy = p1.position.y - p2.position.y;
@@ -178,32 +203,31 @@ double HandLandmarkTwistPublisher::clamp_value(double value, double min_val, dou
 
 void HandLandmarkTwistPublisher::check_detection_timeout()
 {
-  if (!has_reference_)
-    return;
+  if (!has_reference_) return;
 
   auto current_time = std::chrono::steady_clock::now();
   auto time_since_last_detection = current_time - last_detection_time_;
 
-  if (time_since_last_detection >= DETECTION_TIMEOUT_DURATION)
-  {
+  if (time_since_last_detection >= DETECTION_TIMEOUT_DURATION) {
     has_reference_ = false;
     twist_publisher_->publish(geometry_msgs::msg::Twist{});
 
-    RCLCPP_WARN(get_logger(), "Reference invalidated after %.1f seconds without detection",
-                std::chrono::duration<double>(time_since_last_detection).count());
+    RCLCPP_WARN(
+      get_logger(), "Reference invalidated after %.1f seconds without detection",
+      std::chrono::duration<double>(time_since_last_detection).count());
   }
 }
 
-double
-HandLandmarkTwistPublisher::calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose>& landmarks)
+double HandLandmarkTwistPublisher::calculate_thumb_index_distance(
+  const std::vector<geometry_msgs::msg::Pose> & landmarks)
 {
   return calculate_distance(landmarks[THUMB_TIP_IDX], landmarks[INDEX_MCP_IDX]);
 }
 
-void HandLandmarkTwistPublisher::process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks)
+void HandLandmarkTwistPublisher::process_grasp_gesture(
+  const std::vector<geometry_msgs::msg::Pose> & landmarks)
 {
-  if (!gesture_client_->wait_for_action_server(std::chrono::milliseconds(10)))
-  {
+  if (!gesture_client_->wait_for_action_server(std::chrono::milliseconds(10))) {
     return;  // Action server not available, skip this time
   }
 
@@ -212,7 +236,8 @@ void HandLandmarkTwistPublisher::process_grasp_gesture(const std::vector<geometr
 
   // Calculate percentage based on thumb-index distance relative to current palm size
   // When thumb and index are closer together relative to palm size, percentage should be higher (more closed grasp)
-  double distance_ratio = (current_palm_size > 0.0) ? (current_thumb_index_distance / current_palm_size) : 1.0;
+  double distance_ratio =
+    (current_palm_size > 0.0) ? (current_thumb_index_distance / current_palm_size) : 1.0;
 
   // Map the ratio to grasp percentage
   // Typical open hand: thumb-index distance ~= palm size (ratio ~1.0)
@@ -222,8 +247,7 @@ void HandLandmarkTwistPublisher::process_grasp_gesture(const std::vector<geometr
 
   // Only send goal if percentage changed significantly (avoid spam)
   // Use 0.05 (5%) threshold for 0.0-1.0 range
-  if (std::abs(grasp_percentage - last_grasp_percentage_) > 0.05)
-  {
+  if (std::abs(grasp_percentage - last_grasp_percentage_) > 0.05) {
     send_grasp_goal(static_cast<float>(grasp_percentage));
     last_grasp_percentage_ = grasp_percentage;
   }
@@ -239,12 +263,12 @@ void HandLandmarkTwistPublisher::send_grasp_goal(float percentage)
   auto send_goal_options = rclcpp_action::Client<ExecuteGesture>::SendGoalOptions();
 
   // Simple result callback (no feedback needed for quick updates)
-  send_goal_options.result_callback = [this](const GoalHandleExecuteGesture::WrappedResult& result) {
-    if (result.code != rclcpp_action::ResultCode::SUCCEEDED)
-    {
-      RCLCPP_DEBUG(get_logger(), "Grasp goal failed");
-    }
-  };
+  send_goal_options.result_callback =
+    [this](const GoalHandleExecuteGesture::WrappedResult & result) {
+      if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
+        RCLCPP_DEBUG(get_logger(), "Grasp goal failed");
+      }
+    };
 
   gesture_client_->async_send_goal(goal_msg, send_goal_options);
 
@@ -253,7 +277,7 @@ void HandLandmarkTwistPublisher::send_grasp_goal(float percentage)
 
 }  // namespace arm_hand_control
 
-int main(int argc, char* argv[])
+int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<arm_hand_control::HandLandmarkTwistPublisher>());

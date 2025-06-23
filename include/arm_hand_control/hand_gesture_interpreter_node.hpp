@@ -1,16 +1,33 @@
+// ********************************************************************************************************************
+// Copyright [2025] Renesas Electronics Corporation and/or its licensors. All Rights Reserved.
+//
+// The contents of this file (the "contents") are proprietary and confidential to Renesas Electronics Corporation
+// and/or its licensors ("Renesas") and subject to statutory and contractual protections.
+//
+// Unless otherwise expressly agreed in writing between Renesas and you: 1) you may not use, copy, modify, distribute,
+// display, or perform the contents; 2) you may not use any name or mark of Renesas for advertising or publicity
+// purposes or in connection with your use of the contents; 3) RENESAS MAKES NO WARRANTY OR REPRESENTATIONS ABOUT THE
+// SUITABILITY OF THE CONTENTS FOR ANY PURPOSE; THE CONTENTS ARE PROVIDED "AS IS" WITHOUT ANY EXPRESS OR IMPLIED
+// WARRANTY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+// NON-INFRINGEMENT; AND 4) RENESAS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, OR CONSEQUENTIAL DAMAGES,
+// INCLUDING DAMAGES RESULTING FROM LOSS OF USE, DATA, OR PROJECTS, WHETHER IN AN ACTION OF CONTRACT OR TORT, ARISING
+// OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE CONTENTS. Third-party contents included in this file may
+// be subject to different terms.
+// ********************************************************************************************************************
 #pragma once
 
+#include <yaml-cpp/yaml.h>
+
+#include <chrono>
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <map>
+#include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <geometry_msgs/msg/pose_array.hpp>
-#include <yaml-cpp/yaml.h>
-#include <map>
 #include <string>
 #include <vector>
-#include <memory>
-#include <chrono>
 
 // Include the generated action
 #include "arm_hand_control/action/execute_gesture.hpp"
@@ -87,7 +104,8 @@ private:
   std::shared_ptr<GoalHandleExecuteGesture> current_goal_handle_;
 
   //===== Joint Classification =====
-  std::map<std::string, std::map<std::string, std::vector<std::string>>> finger_joints_;  // Maps finger->role->joints
+  std::map<std::string, std::map<std::string, std::vector<std::string>>>
+    finger_joints_;  // Maps finger->role->joints
   std::map<std::string, JointConfig> joint_configs_;
 
   //===== Configuration Parameters =====
@@ -104,13 +122,14 @@ private:
   rclcpp::TimerBase::SharedPtr landmarks_activity_timer_;
   bool hand_landmarks_received_ = false;
   std::chrono::time_point<std::chrono::steady_clock> last_landmarks_time_;
-  const std::chrono::seconds landmarks_timeout_{ 5 };  // 5 seconds timeout
+  const std::chrono::seconds landmarks_timeout_{5};  // 5 seconds timeout
   bool landmarks_demo_mode_stopped_ = false;
 
   //===== Action Server Methods =====
-  rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID& uuid,
-                                          std::shared_ptr<const ExecuteGesture::Goal> goal);
-  rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<GoalHandleExecuteGesture> goal_handle);
+  rclcpp_action::GoalResponse handle_goal(
+    const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const ExecuteGesture::Goal> goal);
+  rclcpp_action::CancelResponse handle_cancel(
+    const std::shared_ptr<GoalHandleExecuteGesture> goal_handle);
   void handle_accepted(const std::shared_ptr<GoalHandleExecuteGesture> goal_handle);
   void execute_gesture_action(const std::shared_ptr<GoalHandleExecuteGesture> goal_handle);
 
@@ -118,9 +137,10 @@ private:
   void load_configuration();
   void publish_joint_states();
   void gesture_callback(const std_msgs::msg::String::SharedPtr msg);
-  void execute_gesture(const std::string& gesture, double duration = -1.0, double percentage = -1.0);
+  void execute_gesture(
+    const std::string & gesture, double duration = -1.0, double percentage = -1.0);
   void transition_timer_callback();
-  void prepare_gesture_transition(const std::string& gesture, double percentage = -1.0);
+  void prepare_gesture_transition(const std::string & gesture, double percentage = -1.0);
   void start_gesture_transition(double duration);
   void finish_gesture_transition();
 
@@ -135,13 +155,13 @@ private:
   void check_landmarks_activity();
 
   //===== Joint Control Methods =====
-  void set_joint_position(const std::string& joint_name, double position);
+  void set_joint_position(const std::string & joint_name, double position);
   void reset_joint_positions();
 
   //===== Finger Abstraction Methods =====
-  void set_finger_position(const std::string& finger, const std::string& role, double percentage);
-  void set_finger_positions(const std::string& finger, double percentage);
-  void set_all_fingers_except(const std::vector<std::string>& exceptions, double percentage);
+  void set_finger_position(const std::string & finger, const std::string & role, double percentage);
+  void set_finger_positions(const std::string & finger, double percentage);
+  void set_all_fingers_except(const std::vector<std::string> & exceptions, double percentage);
 
   //===== Gesture Implementation Methods =====
   // Basic hand gestures
@@ -174,8 +194,8 @@ private:
   void italian_hand();
 
   // Debug gestures
-  void debug_finger(const std::string& finger, const std::string& role, double percentage);
-  void parse_and_execute_debug_gesture(const std::string& gesture_command);
+  void debug_finger(const std::string & finger, const std::string & role, double percentage);
+  void parse_and_execute_debug_gesture(const std::string & gesture_command);
 };
 
 }  // namespace arm_hand_control

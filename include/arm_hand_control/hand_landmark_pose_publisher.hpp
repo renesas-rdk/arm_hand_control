@@ -1,15 +1,32 @@
+// ********************************************************************************************************************
+// Copyright [2025] Renesas Electronics Corporation and/or its licensors. All Rights Reserved.
+//
+// The contents of this file (the "contents") are proprietary and confidential to Renesas Electronics Corporation
+// and/or its licensors ("Renesas") and subject to statutory and contractual protections.
+//
+// Unless otherwise expressly agreed in writing between Renesas and you: 1) you may not use, copy, modify, distribute,
+// display, or perform the contents; 2) you may not use any name or mark of Renesas for advertising or publicity
+// purposes or in connection with your use of the contents; 3) RENESAS MAKES NO WARRANTY OR REPRESENTATIONS ABOUT THE
+// SUITABILITY OF THE CONTENTS FOR ANY PURPOSE; THE CONTENTS ARE PROVIDED "AS IS" WITHOUT ANY EXPRESS OR IMPLIED
+// WARRANTY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+// NON-INFRINGEMENT; AND 4) RENESAS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, OR CONSEQUENTIAL DAMAGES,
+// INCLUDING DAMAGES RESULTING FROM LOSS OF USE, DATA, OR PROJECTS, WHETHER IN AN ACTION OF CONTRACT OR TORT, ARISING
+// OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE CONTENTS. Third-party contents included in this file may
+// be subject to different terms.
+// ********************************************************************************************************************
 #pragma once
 
-#include <rclcpp/rclcpp.hpp>
-#include <rclcpp_action/rclcpp_action.hpp>
+#include <tf2/LinearMath/Quaternion.h>
+
+#include <chrono>
+#include <control_msgs/msg/gripper_command.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include <control_msgs/msg/gripper_command.hpp>
-#include <tf2/LinearMath/Quaternion.h>
-#include <chrono>
-#include <vector>
-#include <string>
 #include <memory>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_action/rclcpp_action.hpp>
+#include <string>
+#include <vector>
 
 // Include the generated action
 #include "arm_hand_control/action/execute_gesture.hpp"
@@ -110,22 +127,24 @@ private:
   void check_detection_timeout();
 
   //===== Processing Methods =====
-  double calculate_x_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks,
-                                     double current_palm_size_pixels);
-  double calculate_y_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks,
-                                     double current_palm_size_pixels);
-  double calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose>& landmarks);
-  void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose>& landmarks);
-  double calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose>& landmarks);
+  double calculate_x_position_change(
+    const std::vector<geometry_msgs::msg::Pose> & landmarks, double current_palm_size_pixels);
+  double calculate_y_position_change(
+    const std::vector<geometry_msgs::msg::Pose> & landmarks, double current_palm_size_pixels);
+  double calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose> & landmarks);
+  void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose> & landmarks);
+  double calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose> & landmarks);
   void send_grasp_goal(float percentage);
   void send_gripper_command(double grasp_percentage);
 
   //===== Utility Methods =====
-  double calculate_distance(const geometry_msgs::msg::Pose& p1, const geometry_msgs::msg::Pose& p2);
+  double calculate_distance(
+    const geometry_msgs::msg::Pose & p1, const geometry_msgs::msg::Pose & p2);
   double apply_smoothing(double current, double previous, double factor);
   double apply_dead_zone(double value, double threshold);
   double clamp_value(double value, double min_val, double max_val);
-  double map_to_range(double normalized_value, double min_range, double max_range, double initial_value);
+  double map_to_range(
+    double normalized_value, double min_range, double max_range, double initial_value);
 };
 
 }  // namespace arm_hand_control

@@ -1,13 +1,30 @@
+// ********************************************************************************************************************
+// Copyright [2025] Renesas Electronics Corporation and/or its licensors. All Rights Reserved.
+//
+// The contents of this file (the "contents") are proprietary and confidential to Renesas Electronics Corporation
+// and/or its licensors ("Renesas") and subject to statutory and contractual protections.
+//
+// Unless otherwise expressly agreed in writing between Renesas and you: 1) you may not use, copy, modify, distribute,
+// display, or perform the contents; 2) you may not use any name or mark of Renesas for advertising or publicity
+// purposes or in connection with your use of the contents; 3) RENESAS MAKES NO WARRANTY OR REPRESENTATIONS ABOUT THE
+// SUITABILITY OF THE CONTENTS FOR ANY PURPOSE; THE CONTENTS ARE PROVIDED "AS IS" WITHOUT ANY EXPRESS OR IMPLIED
+// WARRANTY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+// NON-INFRINGEMENT; AND 4) RENESAS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, OR CONSEQUENTIAL DAMAGES,
+// INCLUDING DAMAGES RESULTING FROM LOSS OF USE, DATA, OR PROJECTS, WHETHER IN AN ACTION OF CONTRACT OR TORT, ARISING
+// OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE CONTENTS. Third-party contents included in this file may
+// be subject to different terms.
+// ********************************************************************************************************************
 #pragma once
 
+#include <yaml-cpp/yaml.h>
+
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <map>
-#include <string>
-#include <vector>
-#include <tuple>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-#include <geometry_msgs/msg/pose_array.hpp>
-#include <yaml-cpp/yaml.h>
+#include <string>
+#include <tuple>
+#include <vector>
 
 namespace arm_hand_control
 {
@@ -54,16 +71,16 @@ private:
   void publish_joint_states();
 
   // Helper functions
-  void set_finger_position(const std::string& finger, const std::string& role, double percentage);
-  void set_finger_positions(const std::string& finger, double percentage);
-  void set_all_fingers_except(const std::vector<std::string>& exceptions, double percentage);
-  void set_joint_position(const std::string& joint_name, double percentage);
+  void set_finger_position(const std::string & finger, const std::string & role, double percentage);
+  void set_finger_positions(const std::string & finger, double percentage);
+  void set_all_fingers_except(const std::vector<std::string> & exceptions, double percentage);
+  void set_joint_position(const std::string & joint_name, double percentage);
   void reset_joint_positions();
 
   // Landmark interpretation functions
-  void process_landmarks(const std::vector<geometry_msgs::msg::Pose>& landmarks);
-  std::tuple<double, double> calculate_finger_curl(const std::vector<geometry_msgs::msg::Pose>& landmarks,
-                                                   const std::string& finger);
+  void process_landmarks(const std::vector<geometry_msgs::msg::Pose> & landmarks);
+  std::tuple<double, double> calculate_finger_curl(
+    const std::vector<geometry_msgs::msg::Pose> & landmarks, const std::string & finger);
 
   // Subscribers, publishers
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;

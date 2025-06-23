@@ -1,8 +1,24 @@
+// ********************************************************************************************************************
+// Copyright [2025] Renesas Electronics Corporation and/or its licensors. All Rights Reserved.
+//
+// The contents of this file (the "contents") are proprietary and confidential to Renesas Electronics Corporation
+// and/or its licensors ("Renesas") and subject to statutory and contractual protections.
+//
+// Unless otherwise expressly agreed in writing between Renesas and you: 1) you may not use, copy, modify, distribute,
+// display, or perform the contents; 2) you may not use any name or mark of Renesas for advertising or publicity
+// purposes or in connection with your use of the contents; 3) RENESAS MAKES NO WARRANTY OR REPRESENTATIONS ABOUT THE
+// SUITABILITY OF THE CONTENTS FOR ANY PURPOSE; THE CONTENTS ARE PROVIDED "AS IS" WITHOUT ANY EXPRESS OR IMPLIED
+// WARRANTY, INCLUDING THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+// NON-INFRINGEMENT; AND 4) RENESAS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, SPECIAL, OR CONSEQUENTIAL DAMAGES,
+// INCLUDING DAMAGES RESULTING FROM LOSS OF USE, DATA, OR PROJECTS, WHETHER IN AN ACTION OF CONTRACT OR TORT, ARISING
+// OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE CONTENTS. Third-party contents included in this file may
+// be subject to different terms.
+// ********************************************************************************************************************
 #pragma once
 
-#include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/twist.hpp>
+#include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <trajectory_msgs/msg/joint_trajectory.hpp>
 
@@ -32,7 +48,7 @@ namespace arm_hand_control
 class TeleopTwistControllerNode : public rclcpp::Node
 {
 public:
-  explicit TeleopTwistControllerNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
+  explicit TeleopTwistControllerNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
 private:
   // Callbacks
@@ -40,11 +56,12 @@ private:
   void joint_twist_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
   void pose_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
   void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
-  rcl_interfaces::msg::SetParametersResult parameter_callback(const std::vector<rclcpp::Parameter>& parameters);
+  rcl_interfaces::msg::SetParametersResult parameter_callback(
+    const std::vector<rclcpp::Parameter> & parameters);
 
   // Helper methods
-  void publish_pose_command(const geometry_msgs::msg::PoseStamped& pose);
-  void publish_joint_command(const sensor_msgs::msg::JointState& joint_state);
+  void publish_pose_command(const geometry_msgs::msg::PoseStamped & pose);
+  void publish_joint_command(const sensor_msgs::msg::JointState & joint_state);
 
   // Subscribers
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr pose_twist_sub_;

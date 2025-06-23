@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>Manipulation of robotic hand and arm</description>
   <maintainer email="baoan.du.xj@renesas.com">Baoan Du</maintainer>
-  <license>MIT</license>
+  <license>Apache License 2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
