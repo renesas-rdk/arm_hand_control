@@ -36,10 +36,8 @@ def generate_launch_description():
     - Arm controller subscribes to: /arm/pose_command, /arm/joint_command
       and publishes: /arm/joint_states, /arm/current_pose, /arm/status
 
-    Note: Set parameter '/agilex_piper_arm.motion_mode' to 0 for cartesian control and 1 for joint control.
+    Note: Set parameter '/agilex_piper_arm_node.motion_mode' to 0 for cartesian control and 1 for joint control.
     """
-    # Get package share directory
-    pkg_dir = get_package_share_directory('arm_hand_control')
 
     # Set up launch arguments
     arm_config = LaunchConfiguration('arm_config_file')
@@ -51,7 +49,8 @@ def generate_launch_description():
     # Declare launch arguments
     declare_arm_config = DeclareLaunchArgument(
         'arm_config_file',
-        default_value=TextSubstitution(text=os.path.join(pkg_dir, 'config/arm/agilex_piper.yaml')),
+        default_value=TextSubstitution(text=os.path.join(
+            get_package_share_directory('agilex_piper_arm'), 'config/agilex_piper.yaml')),
         description='Path to the arm configuration file'
     )
 
@@ -109,9 +108,9 @@ def generate_launch_description():
     # SUBSCRIBES: /arm/pose_command, /arm/joint_command
     # PUBLISHES: /arm/joint_states, /arm/current_pose, /arm/status
     arm_node = Node(
-        package='arm_hand_control',
-        executable='agilex_piper_arm',
-        name='agilex_piper_arm',
+        package='agilex_piper_arm',
+        executable='agilex_piper_arm_node',
+        name='agilex_piper_arm_node',
         output='screen',
         parameters=[{
             'config_file': arm_config,

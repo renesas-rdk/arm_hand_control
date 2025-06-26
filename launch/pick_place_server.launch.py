@@ -48,9 +48,6 @@ def generate_launch_description():
     Note: The arm controller starts with motion_mode=0 (Cartesian) for pick-place operations.
     """
 
-    # Define package directories
-    arm_control_pkg_dir = get_package_share_directory('arm_hand_control')
-
     # Declare launch arguments
     can_interface = LaunchConfiguration('can_interface')
 
@@ -85,11 +82,12 @@ def generate_launch_description():
     # Create arm controller node
     # SUBSCRIBES: /arm/pose_command, /arm/joint_command, /arm/gripper_command
     # PUBLISHES: /arm/joint_states, /arm/current_pose, /arm/status
-    arm_config_file = os.path.join(arm_control_pkg_dir, 'config/arm/agilex_piper.yaml')
+    arm_config_file = os.path.join(
+        get_package_share_directory('agilex_piper_arm'), 'config/agilex_piper.yaml')
     arm_node = Node(
-        package='arm_hand_control',
-        executable='agilex_piper_arm',
-        name='agilex_piper_arm',
+        package='agilex_piper_arm',
+        executable='agilex_piper_arm_node',
+        name='agilex_piper_arm_node',
         output='screen',
         parameters=[{
             'config_file': arm_config_file,
