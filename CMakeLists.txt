@@ -68,21 +68,6 @@ target_include_directories(hand_landmark_interpreter PUBLIC
   ${YAML_CPP_INCLUDE_DIRS}
 )
 
-# Inspire RH56 DexHand
-add_executable(inspire_rh56_dexhand src/inspire_rh56_dexhand_node.cpp)
-ament_target_dependencies(inspire_rh56_dexhand
-  rclcpp
-  sensor_msgs
-  std_msgs
-  ament_index_cpp
-)
-target_link_libraries(inspire_rh56_dexhand
-  ${YAML_CPP_LIBRARIES}
-)
-target_include_directories(inspire_rh56_dexhand PUBLIC
-  ${YAML_CPP_INCLUDE_DIRS}
-)
-
 # Teleop Twist Controller
 add_executable(teleop_twist_controller src/teleop_twist_controller_node.cpp)
 ament_target_dependencies(teleop_twist_controller
@@ -163,7 +148,6 @@ target_link_libraries(pick_place_action_server "${cpp_typesupport_target}")
 install(TARGETS
   hand_gesture_interpreter
   hand_landmark_interpreter
-  inspire_rh56_dexhand
   teleop_twist_controller
   gesture_action_client
   hand_landmark_twist_publisher

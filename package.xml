@@ -37,6 +37,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>agilex_piper_arm</exec_depend>
+  <exec_depend>inspire_rh56_dexhand</exec_depend>
 
   <member_of_group>rosidl_interface_packages</member_of_group>
 

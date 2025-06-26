@@ -28,7 +28,7 @@ namespace arm_hand_control
 HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interpreter")
 {
   // Declare parameters
-  this->declare_parameter("config_file", "config/hand/inspire_rh56.yaml");
+  this->declare_parameter("config_file", "");
   this->declare_parameter("auto_demo_enabled", true);
   this->declare_parameter("gesture_duration", 1.0);
   this->declare_parameter("transition_duration", 0.5);  // Default smooth transition time

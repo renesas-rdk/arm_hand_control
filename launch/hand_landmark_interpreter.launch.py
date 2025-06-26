@@ -23,11 +23,11 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
-    # Get the package directory
-    pkg_dir = get_package_share_directory('arm_hand_control')
+    # Get the package directories
+    inspire_rh56_pkg_dir = get_package_share_directory('inspire_rh56_dexhand')
 
-    # Default config file path (relative to package)
-    default_config = os.path.join('config', 'hand/inspire_rh56.yaml')
+    # Default config file path (from inspire_rh56_dexhand package)
+    default_config = os.path.join(inspire_rh56_pkg_dir, 'config/inspire_rh56.yaml')
 
     # Declare the config file path as a launch argument
     config_arg = DeclareLaunchArgument(

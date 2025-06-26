@@ -70,16 +70,7 @@ Transforms hand landmark positions (e.g., from MediaPipe or other vision systems
 
 Processes 21 landmarks corresponding to the MediaPipe hand tracking model.
 
-### 3. Inspire RH56 Dexhand Controller (`inspire_rh56_dexhand_node`)
-
-Hardware interface for the Inspire RH56 Dexhand via serial communication.
-
-- **Subscriptions**:
-  - `joint_states` (sensor_msgs/JointState) - Joint positions to apply
-- **Hardware Interface**:
-  - Communicates with the hand over a serial connection
-
-### 4. Pick-Place Action Server (`pick_place_action_server`)
+### 3. Pick-Place Action Server (`pick_place_action_server`)
 
 Provides an action server for executing pick-and-place operations with the robotic arm and gripper.
 
@@ -139,12 +130,7 @@ ros2 launch arm_hand_control hand_landmark_interpreter.launch.py
 ros2 launch arm_hand_control hand_gesture_interpreter.launch.py
 ```
 
-3. Inspire RH56 Dexhand:
-```bash
-ros2 launch arm_hand_control inspire_rh56_dexhand.launch.py
-```
-
-4. Pick-Place Action Server:
+3. Pick-Place Action Server:
 ```bash
 ros2 launch arm_hand_control pick_place_server.launch.py
 ```

@@ -26,7 +26,7 @@ namespace arm_hand_control
 HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpreter")
 {
   // Declare parameters
-  this->declare_parameter("config_file", "config/hand/inspire_rh56.yaml");
+  this->declare_parameter("config_file", "");
   this->declare_parameter("curl_smooth_factor", 0.7f);
 
   // Get parameters
