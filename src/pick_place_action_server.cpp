@@ -165,7 +165,13 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     RCLCPP_WARN(this->get_logger(), "Failed to set initial arm speed");
   }
 
-  // Stage 1: Approach pick position
+  // Stage 1: Open gripper
+  if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
+    abort_with_message("Failed to open gripper", result, goal_handle);
+    return;
+  }
+
+  // Stage 2: Approach pick position
   if (!approach_pick(goal->pick_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to approach pick position", result, goal_handle);
     return;
@@ -176,19 +182,19 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
   }
 
-  // Stage 2: Descend to pick position
+  // Stage 3: Descend to pick position
   if (!descend_to_pick(goal->pick_pose, feedback, goal_handle)) {
     abort_with_message("Failed to descend to pick position", result, goal_handle);
     return;
   }
 
-  // Stage 3: Close gripper
+  // Stage 4: Close gripper
   if (!close_gripper(goal->gripper_closed_position, goal->gripper_force, feedback, goal_handle)) {
     abort_with_message("Failed to close gripper", result, goal_handle);
     return;
   }
 
-  // Stage 4: Lift object
+  // Stage 5: Lift object
   if (!lift_object(goal->pick_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to lift object", result, goal_handle);
     return;
@@ -199,7 +205,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     RCLCPP_WARN(this->get_logger(), "Failed to set high speed for transit");
   }
 
-  // Stage 5: Approach place position
+  // Stage 6: Approach place position
   if (!approach_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to approach place position", result, goal_handle);
     return;
@@ -210,19 +216,19 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
   }
 
-  // Stage 6: Descend to place position
+  // Stage 7: Descend to place position
   if (!descend_to_place(goal->place_pose, feedback, goal_handle)) {
     abort_with_message("Failed to descend to place position", result, goal_handle);
     return;
   }
 
-  // Stage 7: Open gripper
+  // Stage 8: Open gripper
   if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
     abort_with_message("Failed to open gripper", result, goal_handle);
     return;
   }
 
-  // Stage 8: Retreat from place position
+  // Stage 9: Retreat from place position
   if (!retreat_from_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to retreat from place position", result, goal_handle);
     return;
@@ -233,7 +239,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     RCLCPP_WARN(this->get_logger(), "Failed to reset arm speed");
   }
 
-  // Stage 9: Return to home position
+  // Stage 10: Return to home position
   feedback->stage = "Returning to home position";
   feedback->progress = 0.95f;
   {
@@ -264,15 +270,14 @@ bool PickPlaceActionServer::approach_pick(
 {
   auto approach_pose = create_approach_pose(pick_pose, approach_height);
   return move_to_pose(
-    approach_pose, "Approaching pick position", 0.0f, 0.125f, feedback, goal_handle);
+    approach_pose, "Approaching pick position", 0.1f, 0.2f, feedback, goal_handle);
 }
 
 bool PickPlaceActionServer::descend_to_pick(
   const geometry_msgs::msg::PoseStamped & pick_pose, std::shared_ptr<PickPlace::Feedback> feedback,
   const std::shared_ptr<GoalHandlePickPlace> & goal_handle)
 {
-  return move_to_pose(
-    pick_pose, "Descending to pick position", 0.125f, 0.25f, feedback, goal_handle);
+  return move_to_pose(pick_pose, "Descending to pick position", 0.2f, 0.3f, feedback, goal_handle);
 }
 
 bool PickPlaceActionServer::close_gripper(
@@ -280,7 +285,7 @@ bool PickPlaceActionServer::close_gripper(
   const std::shared_ptr<GoalHandlePickPlace> & goal_handle)
 {
   feedback->stage = "Closing gripper";
-  feedback->progress = 0.3f;
+  feedback->progress = 0.35f;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     feedback->current_pose = current_pose_;
@@ -302,7 +307,7 @@ bool PickPlaceActionServer::close_gripper(
     return false;
   }
 
-  feedback->progress = 0.375f;
+  feedback->progress = 0.4f;
   goal_handle->publish_feedback(feedback);
   return true;
 }
@@ -313,7 +318,7 @@ bool PickPlaceActionServer::lift_object(
   const std::shared_ptr<GoalHandlePickPlace> & goal_handle)
 {
   auto lift_pose = create_approach_pose(pick_pose, approach_height);
-  return move_to_pose(lift_pose, "Lifting object", 0.375f, 0.5f, feedback, goal_handle);
+  return move_to_pose(lift_pose, "Lifting object", 0.4f, 0.5f, feedback, goal_handle);
 }
 
 bool PickPlaceActionServer::approach_place(
@@ -323,7 +328,7 @@ bool PickPlaceActionServer::approach_place(
 {
   auto approach_pose = create_approach_pose(place_pose, approach_height);
   return move_to_pose(
-    approach_pose, "Approaching place position", 0.5f, 0.625f, feedback, goal_handle);
+    approach_pose, "Approaching place position", 0.5f, 0.6f, feedback, goal_handle);
 }
 
 bool PickPlaceActionServer::descend_to_place(
@@ -331,7 +336,7 @@ bool PickPlaceActionServer::descend_to_place(
   const std::shared_ptr<GoalHandlePickPlace> & goal_handle)
 {
   return move_to_pose(
-    place_pose, "Descending to place position", 0.625f, 0.75f, feedback, goal_handle);
+    place_pose, "Descending to place position", 0.6f, 0.7f, feedback, goal_handle);
 }
 
 bool PickPlaceActionServer::open_gripper(
@@ -339,7 +344,7 @@ bool PickPlaceActionServer::open_gripper(
   const std::shared_ptr<GoalHandlePickPlace> & goal_handle)
 {
   feedback->stage = "Opening gripper";
-  feedback->progress = 0.8f;
+  feedback->progress = feedback->progress > 0.5f ? 0.75f : 0.05f;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     feedback->current_pose = current_pose_;
@@ -361,7 +366,7 @@ bool PickPlaceActionServer::open_gripper(
     return false;
   }
 
-  feedback->progress = 0.875f;
+  feedback->progress = feedback->progress > 0.7f ? 0.8f : 0.1f;
   goal_handle->publish_feedback(feedback);
   return true;
 }
@@ -373,7 +378,7 @@ bool PickPlaceActionServer::retreat_from_place(
 {
   auto retreat_pose = create_approach_pose(place_pose, approach_height);
   return move_to_pose(
-    retreat_pose, "Retreating from place position", 0.875f, 1.0f, feedback, goal_handle);
+    retreat_pose, "Retreating from place position", 0.8f, 0.9f, feedback, goal_handle);
 }
 
 bool PickPlaceActionServer::move_to_pose(
