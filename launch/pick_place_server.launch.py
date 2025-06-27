@@ -18,7 +18,8 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, RegisterEventHandler
+from launch.event_handlers import OnProcessStart
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
@@ -44,8 +45,10 @@ def generate_launch_description():
     - /piper/home: Move to home position
     - /piper/emergency_stop: Emergency stop
     - /piper/set_motion_mode: Set motion mode (true=Joint, false=Cartesian)
+    - /piper/set_high_speed: Set high speed mode for the arm
 
     Note: The arm controller starts with motion_mode=0 (Cartesian) for pick-place operations.
+          The pick-place server waits for the arm controller to be ready before starting.
     """
 
     # Declare launch arguments
@@ -55,29 +58,6 @@ def generate_launch_description():
         'can_interface',
         default_value='can2',
         description='CAN interface to use for the arm controller'
-    )
-
-    # Create the pick-place action server node
-    pick_place_server_node = Node(
-        package='arm_hand_control',
-        executable='pick_place_action_server',
-        name='pick_place_action_server',
-        output='screen',
-        parameters=[{
-            'position_tolerance': 0.005,      # meters
-            'orientation_tolerance': 0.05,    # radians (~2.86 degrees)
-            'move_timeout': 2.0,              # seconds
-            'gripper_timeout': 1.0,           # seconds
-            'gripper_settle_time': 0.5,       # seconds
-        }],
-        remappings=[
-            ('/arm/pose_command', '/arm/pose_command'),
-            ('/arm/gripper_command', '/arm/gripper_command'),
-            ('/arm/current_pose', '/arm/current_pose'),
-            ('/arm/joint_states', '/arm/joint_states'),
-            ('/arm/status', '/arm/status'),
-            ('/arm/set_high_speed', '/piper/set_high_speed'),
-        ]
     )
 
     # Create arm controller node
@@ -111,6 +91,37 @@ def generate_launch_description():
         ]
     )
 
+    # Create the pick-place action server node
+    pick_place_server = Node(
+        package='arm_hand_control',
+        executable='pick_place_action_server',
+        name='pick_place_action_server',
+        output='screen',
+        parameters=[{
+            'position_tolerance': 0.005,      # meters
+            'orientation_tolerance': 0.05,    # radians (~2.86 degrees)
+            'move_timeout': 2.0,              # seconds
+            'gripper_timeout': 1.0,           # seconds
+            'gripper_settle_time': 0.5,       # seconds
+        }],
+        remappings=[
+            ('/arm/pose_command', '/arm/pose_command'),
+            ('/arm/gripper_command', '/arm/gripper_command'),
+            ('/arm/current_pose', '/arm/current_pose'),
+            ('/arm/joint_states', '/arm/joint_states'),
+            ('/arm/status', '/arm/status'),
+            ('/arm/set_high_speed', '/piper/set_high_speed'),
+        ]
+    )
+
+    # Wrap the pick-place server in an event handler to start after arm node
+    pick_place_server_node = RegisterEventHandler(
+        OnProcessStart(
+            target_action=arm_node,
+            on_start=[pick_place_server]
+        )
+    )
+
     # Foxglove bridge for visualization in Foxglove Studio
     # BRIDGES: All relevant topics for visualization in Foxglove Studio
     foxglove_bridge_launch = IncludeLaunchDescription(
@@ -124,7 +135,7 @@ def generate_launch_description():
         declare_can_interface,
 
         # Nodes
-        pick_place_server_node,
         arm_node,
+        pick_place_server_node,
         foxglove_bridge_launch
     ])
