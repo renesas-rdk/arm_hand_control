@@ -131,43 +131,49 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     return;
   }
 
-  // Stage 2: Descend to pick position
-  if (!descend_to_pick(goal->pick_pose, feedback, goal_handle)) {
-    abort_with_message("Failed to descend to pick position", result, goal_handle);
-    return;
-  }
-
-  // Stage 3: Close gripper
-  if (!close_gripper(goal->gripper_closed_position, goal->gripper_force, feedback, goal_handle)) {
-    abort_with_message("Failed to close gripper", result, goal_handle);
-    return;
-  }
-
-  // Stage 4: Lift object
-  if (!lift_object(goal->pick_pose, goal->approach_height, feedback, goal_handle)) {
-    abort_with_message("Failed to lift object", result, goal_handle);
-    return;
-  }
-
-  // Stage 5: Approach place position
-  if (!approach_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
-    abort_with_message("Failed to approach place position", result, goal_handle);
-    return;
-  }
-
-  // Stage 6: Descend to place position
-  if (!descend_to_place(goal->place_pose, feedback, goal_handle)) {
-    abort_with_message("Failed to descend to place position", result, goal_handle);
-    return;
-  }
-
-  // Stage 7: Open gripper
+  // Stage 2: Open gripper
   if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
     abort_with_message("Failed to open gripper", result, goal_handle);
     return;
   }
 
-  // Stage 8: Retreat from place position
+  // Stage 3: Descend to pick position
+  if (!descend_to_pick(goal->pick_pose, feedback, goal_handle)) {
+    abort_with_message("Failed to descend to pick position", result, goal_handle);
+    return;
+  }
+
+  // Stage 4: Close gripper
+  if (!close_gripper(goal->gripper_closed_position, goal->gripper_force, feedback, goal_handle)) {
+    abort_with_message("Failed to close gripper", result, goal_handle);
+    return;
+  }
+
+  // Stage 5: Lift object
+  if (!lift_object(goal->pick_pose, goal->approach_height, feedback, goal_handle)) {
+    abort_with_message("Failed to lift object", result, goal_handle);
+    return;
+  }
+
+  // Stage 6: Approach place position
+  if (!approach_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
+    abort_with_message("Failed to approach place position", result, goal_handle);
+    return;
+  }
+
+  // Stage 7: Descend to place position
+  if (!descend_to_place(goal->place_pose, feedback, goal_handle)) {
+    abort_with_message("Failed to descend to place position", result, goal_handle);
+    return;
+  }
+
+  // Stage 8: Open gripper
+  if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
+    abort_with_message("Failed to open gripper", result, goal_handle);
+    return;
+  }
+
+  // Stage 9: Retreat from place position
   if (!retreat_from_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to retreat from place position", result, goal_handle);
     return;
