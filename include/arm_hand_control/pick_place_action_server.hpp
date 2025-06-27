@@ -123,6 +123,7 @@ private:
     const std::shared_ptr<GoalHandlePickPlace> & goal_handle);
 
   // Helper methods
+  bool move_to_home();
   bool set_arm_high_speed(bool high_speed);
   bool move_to_pose(
     const geometry_msgs::msg::PoseStamped & target_pose, const std::string & stage_name,
@@ -156,6 +157,10 @@ private:
 
   // Service client
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr high_speed_client_;
+
+  // Home position storage
+  geometry_msgs::msg::PoseStamped home_pose_;
+  double home_gripper_position_;
 
   // Action server
   rclcpp_action::Server<PickPlace>::SharedPtr action_server_;

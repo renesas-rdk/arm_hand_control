@@ -31,7 +31,17 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   this->declare_parameter("orientation_tolerance", 0.05);  // ~3 degrees
   this->declare_parameter("move_timeout", 2.0);            // 2 seconds
   this->declare_parameter("gripper_timeout", 1.0);         // 1 second
-  this->declare_parameter("gripper_settle_time", 0.5);     // 1 second
+  this->declare_parameter("gripper_settle_time", 0.5);     // 0.5 second
+
+  // Home position parameters (default values for Piper arm)
+  this->declare_parameter("home_position.x", 0.06);
+  this->declare_parameter("home_position.y", 0.0);
+  this->declare_parameter("home_position.z", 0.22);
+  this->declare_parameter("home_orientation.x", 0.0);
+  this->declare_parameter("home_orientation.y", 0.68);
+  this->declare_parameter("home_orientation.z", 0.0);
+  this->declare_parameter("home_orientation.w", 0.74);
+  this->declare_parameter("home_gripper_position", 0.05);
 
   // Get parameters
   position_tolerance_ = this->get_parameter("position_tolerance").as_double();
@@ -68,11 +78,33 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
     std::bind(&PickPlaceActionServer::handle_cancel, this, _1),
     std::bind(&PickPlaceActionServer::handle_accepted, this, _1));
 
+  // Initialize home pose
+  home_pose_.header.frame_id = "base_link";
+  home_pose_.pose.position.x = this->get_parameter("home_position.x").as_double();
+  home_pose_.pose.position.y = this->get_parameter("home_position.y").as_double();
+  home_pose_.pose.position.z = this->get_parameter("home_position.z").as_double();
+  home_pose_.pose.orientation.x = this->get_parameter("home_orientation.x").as_double();
+  home_pose_.pose.orientation.y = this->get_parameter("home_orientation.y").as_double();
+  home_pose_.pose.orientation.z = this->get_parameter("home_orientation.z").as_double();
+  home_pose_.pose.orientation.w = this->get_parameter("home_orientation.w").as_double();
+  home_gripper_position_ = this->get_parameter("home_gripper_position").as_double();
+
   RCLCPP_INFO(this->get_logger(), "Pick-Place Action Server initialized");
   RCLCPP_INFO(this->get_logger(), "Position tolerance: %.3f m", position_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Orientation tolerance: %.3f rad", orientation_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Move timeout: %.1f s", move_timeout_);
   RCLCPP_INFO(this->get_logger(), "Gripper timeout: %.1f s", gripper_timeout_);
+  RCLCPP_INFO(
+    this->get_logger(), "Home position: [%.3f, %.3f, %.3f]", home_pose_.pose.position.x,
+    home_pose_.pose.position.y, home_pose_.pose.position.z);
+
+  // Initialize arm to home position
+  RCLCPP_INFO(this->get_logger(), "Moving arm to home position...");
+  if (move_to_home()) {
+    RCLCPP_INFO(this->get_logger(), "Arm initialized at home position");
+  } else {
+    RCLCPP_WARN(this->get_logger(), "Failed to initialize arm to home position");
+  }
 }
 
 rclcpp_action::GoalResponse PickPlaceActionServer::handle_goal(
@@ -107,7 +139,7 @@ rclcpp_action::CancelResponse PickPlaceActionServer::handle_cancel(
 
   // Open gripper to safe state
   auto gripper_cmd = control_msgs::msg::GripperCommand();
-  gripper_cmd.position = 0.06;  // Default open position
+  gripper_cmd.position = 0.05;  // Default open position
   gripper_cmd.max_effort = 1.0;
   gripper_cmd_pub_->publish(gripper_cmd);
 
@@ -199,6 +231,23 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   // Reset to high speed (100%)
   if (!set_arm_high_speed(true)) {
     RCLCPP_WARN(this->get_logger(), "Failed to reset arm speed");
+  }
+
+  // Stage 9: Return to home position
+  feedback->stage = "Returning to home position";
+  feedback->progress = 0.95f;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    feedback->current_pose = current_pose_;
+  }
+  goal_handle->publish_feedback(feedback);
+
+  if (!move_to_home()) {
+    RCLCPP_WARN(this->get_logger(), "Failed to return to home position");
+    // Don't abort the mission, just warn
+  } else {
+    feedback->progress = 1.0f;
+    goal_handle->publish_feedback(feedback);
   }
 
   // Success!
@@ -495,6 +544,52 @@ bool PickPlaceActionServer::set_arm_high_speed(bool high_speed)
   RCLCPP_INFO(
     this->get_logger(), "Set arm to %s", high_speed ? "high speed (100%)" : "low speed (10%)");
   return true;
+}
+
+bool PickPlaceActionServer::move_to_home()
+{
+  RCLCPP_INFO(this->get_logger(), "Moving to home position");
+
+  // Update timestamp
+  home_pose_.header.stamp = this->now();
+
+  // Move arm to home position
+  arm_cmd_pub_->publish(home_pose_);
+
+  // Open gripper to home position
+  auto gripper_cmd = control_msgs::msg::GripperCommand();
+  gripper_cmd.position = home_gripper_position_;
+  gripper_cmd.max_effort = 1.0;
+  gripper_cmd_pub_->publish(gripper_cmd);
+
+  // Wait for arm to reach home position
+  auto start_time = std::chrono::steady_clock::now();
+
+  while (rclcpp::ok()) {
+    // Check if pose reached
+    bool pose_reached = false;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      pose_reached =
+        is_pose_reached(home_pose_, current_pose_, position_tolerance_, orientation_tolerance_);
+    }
+
+    if (pose_reached) {
+      return true;
+    }
+
+    // Check timeout (use longer timeout for home movement)
+    auto elapsed = std::chrono::steady_clock::now() - start_time;
+    if (std::chrono::duration<double>(elapsed).count() > 5.0) {  // 5 second timeout for home
+      RCLCPP_ERROR(this->get_logger(), "Timeout moving to home position");
+      return false;
+    }
+
+    // Sleep briefly
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  return false;
 }
 
 }  // namespace arm_hand_control

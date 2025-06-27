@@ -103,6 +103,15 @@ def generate_launch_description():
             'move_timeout': 2.0,              # seconds
             'gripper_timeout': 1.0,           # seconds
             'gripper_settle_time': 0.5,       # seconds
+            # Home position parameters
+            'home_position.x': 0.06,          # meters
+            'home_position.y': 0.0,           # meters
+            'home_position.z': 0.22,          # meters
+            'home_orientation.x': 0.0,        # quaternion
+            'home_orientation.y': 0.68,       # quaternion (45 deg pitch)
+            'home_orientation.z': 0.0,        # quaternion
+            'home_orientation.w': 0.74,       # quaternion
+            'home_gripper_position': 0.05,    # meters (open position)
         }],
         remappings=[
             ('/arm/pose_command', '/arm/pose_command'),
