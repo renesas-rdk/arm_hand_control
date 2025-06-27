@@ -68,7 +68,7 @@ def generate_launch_description():
             'orientation_tolerance': 0.05,    # radians (~2.86 degrees)
             'move_timeout': 2.0,              # seconds
             'gripper_timeout': 1.0,           # seconds
-            'gripper_settle_time': 1.0,       # seconds
+            'gripper_settle_time': 0.5,       # seconds
         }],
         remappings=[
             ('/arm/pose_command', '/arm/pose_command'),
@@ -76,6 +76,7 @@ def generate_launch_description():
             ('/arm/current_pose', '/arm/current_pose'),
             ('/arm/joint_states', '/arm/joint_states'),
             ('/arm/status', '/arm/status'),
+            ('/arm/set_high_speed', '/piper/set_high_speed'),
         ]
     )
 

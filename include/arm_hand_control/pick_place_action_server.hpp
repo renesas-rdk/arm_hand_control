@@ -28,16 +28,15 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
-#include <string>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <thread>
+#include <std_srvs/srv/set_bool.hpp>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
 
 #include "arm_hand_control/action/pick_place.hpp"
 
 namespace arm_hand_control
 {
 
-// Pick and Place Action Server Node
+// Pick and Place Action Server
 //
 // This node provides an action server for executing pick-and-place operations
 // using the Agilex Piper arm and gripper. It implements a state machine that
@@ -124,6 +123,7 @@ private:
     const std::shared_ptr<GoalHandlePickPlace> & goal_handle);
 
   // Helper methods
+  bool set_arm_high_speed(bool high_speed);
   bool move_to_pose(
     const geometry_msgs::msg::PoseStamped & target_pose, const std::string & stage_name,
     float progress_start, float progress_end, std::shared_ptr<PickPlace::Feedback> feedback,
@@ -148,12 +148,17 @@ private:
   void status_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg);
 
   // ROS2 communication
-  rclcpp_action::Server<PickPlace>::SharedPtr action_server_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr arm_cmd_pub_;
   rclcpp::Publisher<control_msgs::msg::GripperCommand>::SharedPtr gripper_cmd_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr status_sub_;
+
+  // Service client
+  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr high_speed_client_;
+
+  // Action server
+  rclcpp_action::Server<PickPlace>::SharedPtr action_server_;
 
   // State tracking
   mutable std::mutex state_mutex_;

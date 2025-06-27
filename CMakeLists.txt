@@ -134,6 +134,7 @@ ament_target_dependencies(pick_place_action_server
   rclcpp
   rclcpp_action
   std_msgs
+  std_srvs
   sensor_msgs
   geometry_msgs
   control_msgs

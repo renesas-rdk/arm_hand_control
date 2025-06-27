@@ -31,7 +31,7 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   this->declare_parameter("orientation_tolerance", 0.05);  // ~3 degrees
   this->declare_parameter("move_timeout", 2.0);            // 2 seconds
   this->declare_parameter("gripper_timeout", 1.0);         // 1 second
-  this->declare_parameter("gripper_settle_time", 1.0);     // 1 second
+  this->declare_parameter("gripper_settle_time", 0.5);     // 1 second
 
   // Get parameters
   position_tolerance_ = this->get_parameter("position_tolerance").as_double();
@@ -44,6 +44,9 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   arm_cmd_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/arm/pose_command", 10);
   gripper_cmd_pub_ =
     this->create_publisher<control_msgs::msg::GripperCommand>("/arm/gripper_command", 10);
+
+  // Create service client for speed control
+  high_speed_client_ = this->create_client<std_srvs::srv::SetBool>("/arm/set_high_speed");
 
   // Create subscribers
   pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -125,58 +128,77 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
 
   RCLCPP_INFO(this->get_logger(), "Starting pick-place execution");
 
+  // Set initial speed to high speed (100%)
+  if (!set_arm_high_speed(true)) {
+    RCLCPP_WARN(this->get_logger(), "Failed to set initial arm speed");
+  }
+
   // Stage 1: Approach pick position
   if (!approach_pick(goal->pick_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to approach pick position", result, goal_handle);
     return;
   }
 
-  // Stage 2: Open gripper
-  if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
-    abort_with_message("Failed to open gripper", result, goal_handle);
-    return;
+  // Set low speed for descending (10%)
+  if (!set_arm_high_speed(false)) {
+    RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
   }
 
-  // Stage 3: Descend to pick position
+  // Stage 2: Descend to pick position
   if (!descend_to_pick(goal->pick_pose, feedback, goal_handle)) {
     abort_with_message("Failed to descend to pick position", result, goal_handle);
     return;
   }
 
-  // Stage 4: Close gripper
+  // Stage 3: Close gripper
   if (!close_gripper(goal->gripper_closed_position, goal->gripper_force, feedback, goal_handle)) {
     abort_with_message("Failed to close gripper", result, goal_handle);
     return;
   }
 
-  // Stage 5: Lift object
+  // Stage 4: Lift object
   if (!lift_object(goal->pick_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to lift object", result, goal_handle);
     return;
   }
 
-  // Stage 6: Approach place position
+  // Set high speed for transit (100%)
+  if (!set_arm_high_speed(true)) {
+    RCLCPP_WARN(this->get_logger(), "Failed to set high speed for transit");
+  }
+
+  // Stage 5: Approach place position
   if (!approach_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to approach place position", result, goal_handle);
     return;
   }
 
-  // Stage 7: Descend to place position
+  // Set low speed for descending (10%)
+  if (!set_arm_high_speed(false)) {
+    RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
+  }
+
+  // Stage 6: Descend to place position
   if (!descend_to_place(goal->place_pose, feedback, goal_handle)) {
     abort_with_message("Failed to descend to place position", result, goal_handle);
     return;
   }
 
-  // Stage 8: Open gripper
+  // Stage 7: Open gripper
   if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
     abort_with_message("Failed to open gripper", result, goal_handle);
     return;
   }
 
-  // Stage 9: Retreat from place position
+  // Stage 8: Retreat from place position
   if (!retreat_from_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
     abort_with_message("Failed to retreat from place position", result, goal_handle);
     return;
+  }
+
+  // Reset to high speed (100%)
+  if (!set_arm_high_speed(true)) {
+    RCLCPP_WARN(this->get_logger(), "Failed to reset arm speed");
   }
 
   // Success!
@@ -440,6 +462,39 @@ void PickPlaceActionServer::status_callback(const std_msgs::msg::UInt8MultiArray
 {
   std::lock_guard<std::mutex> lock(state_mutex_);
   current_status_ = msg->data;
+}
+
+bool PickPlaceActionServer::set_arm_high_speed(bool high_speed)
+{
+  if (!high_speed_client_->wait_for_service(std::chrono::seconds(1))) {
+    RCLCPP_WARN(this->get_logger(), "Speed service not available");
+    return false;
+  }
+
+  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
+  request->data = high_speed;
+
+  // Use async call with callback instead of blocking
+  auto result_future = high_speed_client_->async_send_request(request);
+
+  // Wait for the result without spinning
+  auto status = result_future.wait_for(std::chrono::seconds(1));
+
+  if (status != std::future_status::ready) {
+    RCLCPP_ERROR(this->get_logger(), "Speed service call timed out");
+    return false;
+  }
+
+  auto response = result_future.get();
+  if (!response->success) {
+    RCLCPP_ERROR(
+      this->get_logger(), "Speed service returned failure: %s", response->message.c_str());
+    return false;
+  }
+
+  RCLCPP_INFO(
+    this->get_logger(), "Set arm to %s", high_speed ? "high speed (100%)" : "low speed (10%)");
+  return true;
 }
 
 }  // namespace arm_hand_control
