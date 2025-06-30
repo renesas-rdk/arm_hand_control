@@ -5,6 +5,7 @@ float64 approach_height 0.1                # Height above pick/place poses for a
 float64 gripper_open_position 0.06         # Gripper position when open (meters)
 float64 gripper_closed_position 0.0        # Gripper position when closed (meters)
 float64 gripper_force 1.0                  # Gripper force in Newtons
+bool return_to_home true                   # Whether to return to home position after placing (default: true)
 ---
 # Result definition
 bool success                               # Whether the pick-and-place succeeded

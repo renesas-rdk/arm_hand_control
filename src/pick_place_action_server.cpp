@@ -239,20 +239,32 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     RCLCPP_WARN(this->get_logger(), "Failed to reset arm speed");
   }
 
-  // Stage 10: Return to home position
-  feedback->stage = "Returning to home position";
-  feedback->progress = 0.95f;
-  {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    feedback->current_pose = current_pose_;
-  }
-  goal_handle->publish_feedback(feedback);
+  // Stage 10: Return to home position (optional based on action request)
+  if (goal->return_to_home) {
+    feedback->stage = "Returning to home position";
+    feedback->progress = 0.95f;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      feedback->current_pose = current_pose_;
+    }
+    goal_handle->publish_feedback(feedback);
 
-  if (!move_to_home()) {
-    RCLCPP_WARN(this->get_logger(), "Failed to return to home position");
-    // Don't abort the mission, just warn
+    if (!move_to_home()) {
+      RCLCPP_WARN(this->get_logger(), "Failed to return to home position");
+      // Don't abort the mission, just warn
+    } else {
+      feedback->progress = 1.0f;
+      goal_handle->publish_feedback(feedback);
+    }
   } else {
+    // Skip home position, just update progress to complete
+    RCLCPP_INFO(this->get_logger(), "Skipping return to home position as requested");
+    feedback->stage = "Operation complete";
     feedback->progress = 1.0f;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      feedback->current_pose = current_pose_;
+    }
     goal_handle->publish_feedback(feedback);
   }
 

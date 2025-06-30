@@ -87,14 +87,16 @@ Provides an action server for executing pick-and-place operations with the robot
   - `/arm/status` (std_msgs/UInt8MultiArray) - Arm status information
 
 The action server implements a state machine that sequences through:
-1. Approach pick position
-2. Descend to pick
-3. Close gripper
-4. Lift object
-5. Approach place position
-6. Descend to place
-7. Open gripper
-8. Retreat from place
+1. Open gripper (initial)
+2. Approach pick position
+3. Descend to pick
+4. Close gripper
+5. Lift object
+6. Approach place position
+7. Descend to place
+8. Open gripper
+9. Retreat from place
+10. Return to home position (optional, controlled by `return_to_home` parameter in action goal)
 
 ## Installation
 
@@ -168,7 +170,15 @@ Send a pick-and-place action goal (using command line):
 ros2 action send_goal /pick_place arm_hand_control/action/PickPlace \
   "{pick_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.2, y: 0.0, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
    place_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.3, y: 0.1, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
-   approach_height: 0.07, gripper_open_position: 0.03, gripper_closed_position: 0.01, gripper_force: 1.0}"
+   approach_height: 0.07, gripper_open_position: 0.03, gripper_closed_position: 0.01, gripper_force: 1.0, return_to_home: true}"
+```
+
+To execute a pick-and-place without returning to home position:
+```bash
+ros2 action send_goal /pick_place arm_hand_control/action/PickPlace \
+  "{pick_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.2, y: 0.0, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
+   place_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.3, y: 0.1, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
+   approach_height: 0.07, gripper_open_position: 0.03, gripper_closed_position: 0.01, gripper_force: 1.0, return_to_home: false}"
 ```
 
 ## Dependencies
