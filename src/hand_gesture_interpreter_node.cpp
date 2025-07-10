@@ -244,7 +244,7 @@ std::vector<std::string> HandGestureInterpreter::get_all_available_gestures()
     "one", "two", "three", "four", "five",
 
     // Communication gestures
-    "point", "thumbs_up", "ok", "peace", "call_me",
+    "point", "thumbs_up", "ok", "call_me", "peace",
 
     // Fun/special gestures
     "rock", "fist_bump", "gun", "spider_man", "finger_cross"};
