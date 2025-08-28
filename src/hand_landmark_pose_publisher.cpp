@@ -93,8 +93,6 @@ HandLandmarkPosePublisher::HandLandmarkPosePublisher()
   pose_publisher_ = create_publisher<geometry_msgs::msg::PoseStamped>("target_pose", 10);
   gripper_publisher_ = create_publisher<control_msgs::msg::GripperCommand>("gripper_command", 10);
 
-  gesture_client_ = rclcpp_action::create_client<ExecuteGesture>(this, "execute_gesture");
-
   timeout_timer_ = create_wall_timer(
     std::chrono::milliseconds(100),
     std::bind(&HandLandmarkPosePublisher::check_detection_timeout, this));
@@ -367,14 +365,8 @@ void HandLandmarkPosePublisher::process_grasp_gesture(
 
   // Only send commands if percentage changed significantly (avoid spam)
   if (std::abs(grasp_percentage - last_grasp_percentage_) > gripper_command_threshold_) {
-    // Send gripper command
+    // Send gripper command (hand gesture interpreter will handle the gesture)
     send_gripper_command(grasp_percentage);
-
-    // Send gesture action (for hand control)
-    if (gesture_client_->wait_for_action_server(std::chrono::milliseconds(10))) {
-      send_grasp_goal(static_cast<float>(grasp_percentage));
-    }
-
     last_grasp_percentage_ = grasp_percentage;
   }
 }
@@ -398,29 +390,6 @@ void HandLandmarkPosePublisher::send_gripper_command(double grasp_percentage)
   RCLCPP_DEBUG(
     get_logger(), "Published gripper command: position=%.3f, effort=%.1f", gripper_msg.position,
     gripper_msg.max_effort);
-}
-
-void HandLandmarkPosePublisher::send_grasp_goal(float percentage)
-{
-  auto goal_msg = ExecuteGesture::Goal();
-  goal_msg.gesture_name = percentage < 0.2 ? "open_hand" : "three_finger_grasp";
-  goal_msg.duration = 0.1f;
-  goal_msg.percentage =
-    percentage > 0.55 ? 0.55f : percentage;  // 0.55 is the max for three_finger_grasp
-
-  auto send_goal_options = rclcpp_action::Client<ExecuteGesture>::SendGoalOptions();
-
-  // Simple result callback (no feedback needed for quick updates)
-  send_goal_options.result_callback =
-    [this](const GoalHandleExecuteGesture::WrappedResult & result) {
-      if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
-        RCLCPP_DEBUG(get_logger(), "Grasp goal failed");
-      }
-    };
-
-  gesture_client_->async_send_goal(goal_msg, send_goal_options);
-
-  RCLCPP_DEBUG(get_logger(), "Sent grasp goal: %.3f", percentage);
 }
 
 }  // namespace arm_hand_control

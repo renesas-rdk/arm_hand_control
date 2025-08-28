@@ -24,12 +24,8 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp_action/rclcpp_action.hpp>
 #include <string>
 #include <vector>
-
-// Include the generated action
-#include "arm_hand_control/action/execute_gesture.hpp"
 
 namespace arm_hand_control
 {
@@ -68,10 +64,6 @@ public:
   virtual ~HandLandmarkPosePublisher() = default;
 
 private:
-  //===== Action Type Definitions =====
-  using ExecuteGesture = arm_hand_control::action::ExecuteGesture;
-  using GoalHandleExecuteGesture = rclcpp_action::ClientGoalHandle<ExecuteGesture>;
-
   //===== MediaPipe Hand Landmark Indices =====
   static constexpr int WRIST_IDX = 0;
   static constexpr int THUMB_TIP_IDX = 4;
@@ -83,7 +75,6 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
   rclcpp::Publisher<control_msgs::msg::GripperCommand>::SharedPtr gripper_publisher_;
-  rclcpp_action::Client<ExecuteGesture>::SharedPtr gesture_client_;
   rclcpp::TimerBase::SharedPtr timeout_timer_;
 
   //===== Configuration Parameters =====
@@ -134,7 +125,6 @@ private:
   double calculate_z_position_change(const std::vector<geometry_msgs::msg::Pose> & landmarks);
   void process_grasp_gesture(const std::vector<geometry_msgs::msg::Pose> & landmarks);
   double calculate_thumb_index_distance(const std::vector<geometry_msgs::msg::Pose> & landmarks);
-  void send_grasp_goal(float percentage);
   void send_gripper_command(double grasp_percentage);
 
   //===== Utility Methods =====
