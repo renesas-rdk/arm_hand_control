@@ -32,12 +32,14 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   this->declare_parameter("auto_demo_enabled", true);
   this->declare_parameter("gesture_duration", 1.0);
   this->declare_parameter("transition_duration", 0.5);  // Default smooth transition time
+  this->declare_parameter("gripper_max_range", 0.04);   // Default max gripper range in meters
 
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
   auto_demo_enabled_ = this->get_parameter("auto_demo_enabled").as_bool();
   gesture_duration_ = this->get_parameter("gesture_duration").as_double();
   transition_duration_ = this->get_parameter("transition_duration").as_double();
+  gripper_max_range_ = this->get_parameter("gripper_max_range").as_double();
 
   // Make the path absolute if it's relative
   if (!std::filesystem::path(config_file_path_).is_absolute()) {
@@ -57,6 +59,11 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   gesture_subscriber_ = this->create_subscription<std_msgs::msg::String>(
     "hand_gesture", qos,
     std::bind(&HandGestureInterpreter::gesture_callback, this, std::placeholders::_1));
+
+  // Create subscriber for gripper commands
+  gripper_command_subscriber_ = this->create_subscription<control_msgs::msg::GripperCommand>(
+    "gripper_command", qos,
+    std::bind(&HandGestureInterpreter::gripper_command_callback, this, std::placeholders::_1));
 
   // Create subscriber for hand landmarks
   auto landmarks_qos = rclcpp::QoS(1).best_effort().durability_volatile();
@@ -87,6 +94,9 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
     this->get_logger(), "Listening for gestures on topic: %s",
     gesture_subscriber_->get_topic_name());
   RCLCPP_INFO(
+    this->get_logger(), "Listening for gripper commands on topic: %s",
+    gripper_command_subscriber_->get_topic_name());
+  RCLCPP_INFO(
     this->get_logger(), "Listening for hand landmarks on topic: %s",
     landmarks_subscriber_->get_topic_name());
   RCLCPP_INFO(this->get_logger(), "Gesture action server started: execute_gesture");
@@ -97,6 +107,7 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   RCLCPP_INFO(this->get_logger(), "Auto demo enabled: %s", auto_demo_enabled_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "Gesture duration: %.2f seconds", gesture_duration_);
   RCLCPP_INFO(this->get_logger(), "Transition duration: %.2f seconds", transition_duration_);
+  RCLCPP_INFO(this->get_logger(), "Gripper max range: %.3f meters", gripper_max_range_);
   RCLCPP_INFO(this->get_logger(), "Available gestures: %zu", get_all_available_gestures().size());
   RCLCPP_INFO(
     this->get_logger(), "Will restart demo mode after %ld seconds of no landmarks",
@@ -399,7 +410,7 @@ void HandGestureInterpreter::prepare_gesture_transition(
   } else if (gesture == "pinch") {
     pinch(percentage > 0.0 ? percentage : 1.0);
   } else if (gesture == "three_finger_grasp") {
-    three_finger_grasp(percentage > 0.0 ? percentage : 0.5);
+    three_finger_grasp(percentage < 0.0 ? 0.5 : percentage);
   } else if (gesture == "open_hand") {
     grasp(0.0);
   }
@@ -597,6 +608,35 @@ void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::Share
   execute_gesture(msg->data, transition_duration_);
 }
 
+void HandGestureInterpreter::gripper_command_callback(
+  const control_msgs::msg::GripperCommand::SharedPtr msg)
+{
+  // Calculate the percentage based on the gripper position
+  // msg->position is the desired gap between fingers in meters
+  // 0.0 meters = fully closed (percentage = 1.0)
+  // gripper_max_range_ meters = fully open (percentage = 0.0)
+  double clamped_position = std::max(0.0, std::min(gripper_max_range_, msg->position));
+  double grasp_percentage = 1.0 - (clamped_position / gripper_max_range_);
+
+  // Combined log message with all relevant information
+  RCLCPP_INFO(
+    this->get_logger(),
+    "Gripper command received: position=%.3f m, effort=%.3f, mapped to %.1f%% closed grasp",
+    msg->position, msg->max_effort, grasp_percentage * 100.0);
+
+  // Stop demo mode if it's running
+  if (demo_timer_) {
+    stop_demo_mode();
+  }
+
+  // Use three_finger_grasp gesture with smooth transition
+  if (grasp_percentage > 0.2) {
+    execute_gesture("three_finger_grasp", transition_duration_, grasp_percentage);
+  } else {
+    execute_gesture("open_hand", transition_duration_);
+  }
+}
+
 // Add landmarks callback implementation
 void HandGestureInterpreter::landmarks_callback(
   const geometry_msgs::msg::PoseArray::SharedPtr msg [[maybe_unused]])
@@ -720,14 +760,21 @@ void HandGestureInterpreter::pinch(double percentage)
 
 void HandGestureInterpreter::three_finger_grasp(double percentage)
 {
+  // Fully closed state for the three finger grasp gesture
+  double index_max_range = 0.75;  // FIXME: temporary value for the broken finger
+  double middle_max_range = 0.55;
+  double thumb_max_range = 0.50;
+
   // Reset all positions first
   reset_joint_positions();
 
-  // Set thumb, index, and middle fingers
+  // Set thumb
   set_finger_position("thumb", "yaw", 1.0);
-  set_finger_position("thumb", "pitch", percentage * 0.8);
-  set_finger_positions("index", percentage);
-  set_finger_positions("middle", percentage);
+  set_finger_position("thumb", "pitch", percentage * thumb_max_range);
+
+  // Set index and middle fingers
+  set_finger_positions("index", percentage * index_max_range);
+  set_finger_positions("middle", percentage * middle_max_range);
 
   // Set ring and pinky fully closed
   set_finger_positions("ring", 1.0);

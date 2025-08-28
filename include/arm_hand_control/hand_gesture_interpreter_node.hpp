@@ -19,6 +19,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <chrono>
+#include <control_msgs/msg/gripper_command.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <map>
 #include <memory>
@@ -87,6 +88,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr gesture_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmarks_subscriber_;
+  rclcpp::Subscription<control_msgs::msg::GripperCommand>::SharedPtr gripper_command_subscriber_;
   rclcpp_action::Server<ExecuteGesture>::SharedPtr action_server_;
 
   //===== Joint State Data =====
@@ -112,6 +114,7 @@ private:
   std::string config_file_path_;  // Path to the YAML configuration file
   bool auto_demo_enabled_;        // Whether to auto loop through gestures
   double gesture_duration_;       // How long to hold each gesture in seconds
+  double gripper_max_range_;      // Maximum gripper opening range in meters
 
   //===== Demo Mode Related =====
   rclcpp::TimerBase::SharedPtr demo_timer_;
@@ -137,6 +140,7 @@ private:
   void load_configuration();
   void publish_joint_states();
   void gesture_callback(const std_msgs::msg::String::SharedPtr msg);
+  void gripper_command_callback(const control_msgs::msg::GripperCommand::SharedPtr msg);
   void execute_gesture(
     const std::string & gesture, double duration = -1.0, double percentage = -1.0);
   void transition_timer_callback();
