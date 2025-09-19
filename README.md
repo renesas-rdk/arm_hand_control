@@ -27,6 +27,7 @@ Supported gestures:
   - pinch - Pinch gesture with thumb and index finger
   - three_finger_grasp - Grasp with three fingers
   - open_hand - Open all fingers
+  - loose_fist - A loosely closed hand
   - grasp_X - Grasp with percentage X (e.g., "grasp_0.5" for 50% closed)
 
 - **Counting gestures**:
