@@ -249,7 +249,7 @@ std::vector<std::string> HandGestureInterpreter::get_all_available_gestures()
 {
   return {
     // Basic hand gestures
-    "open_hand", "pinch", "three_finger_grasp",
+    "open_hand", "pinch", "loose_fist", "three_finger_grasp",
 
     // Counting gestures
     "one", "two", "three", "four", "five",
@@ -425,6 +425,8 @@ void HandGestureInterpreter::prepare_gesture_transition(
     count_four();
   } else if (gesture == "five") {
     count_five();
+  } else if (gesture == "loose_fist") {
+    grasp(0.6);
   }
   // Communication gestures
   else if (gesture == "point") {
