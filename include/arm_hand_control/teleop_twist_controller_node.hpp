@@ -20,7 +20,7 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-#include <trajectory_msgs/msg/joint_trajectory.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 
 namespace arm_hand_control
 {
@@ -38,13 +38,13 @@ namespace arm_hand_control
  *
  * Published topics:
  *   - pose_command (geometry_msgs/PoseStamped): Commanded pose for the arm
- *   - joint_command (trajectory_msgs/JointTrajectory): Commanded joint positions
+ *   - joint_command (std_msgs/Float64MultiArray): Commanded joint positions
  *
  * Parameters:
  *   - linear_scale (double): Scale factor for linear velocity (m per unit twist)
  *   - angular_scale (double): Scale factor for angular velocity (rad per unit twist)
  *   - joint_vel_scale (double): Scale factor for joint velocity (rad per unit twist)
- *   - joint_names (string_array): List of joint names for trajectory control
+ *   - joint_names (string_array): List of joint names for position control
  */
 class TeleopTwistControllerNode : public rclcpp::Node
 {
@@ -63,7 +63,8 @@ private:
   // Helper methods
   void publish_pose_command(const geometry_msgs::msg::PoseStamped & pose);
   void publish_joint_command(const sensor_msgs::msg::JointState & joint_state);
-  sensor_msgs::msg::JointState filter_joint_state(const sensor_msgs::msg::JointState & joint_state);
+  sensor_msgs::msg::JointState filter_joint_state(
+    const sensor_msgs::msg::JointState & joint_state) const;
 
   // Subscribers
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr pose_twist_sub_;
@@ -73,7 +74,7 @@ private:
 
   // Publishers
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_cmd_pub_;
-  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr joint_cmd_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr joint_cmd_pub_;
 
   // Parameter callback handle
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
