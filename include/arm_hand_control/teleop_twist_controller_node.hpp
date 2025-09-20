@@ -44,6 +44,7 @@ namespace arm_hand_control
  *   - linear_scale (double): Scale factor for linear velocity (m per unit twist)
  *   - angular_scale (double): Scale factor for angular velocity (rad per unit twist)
  *   - joint_vel_scale (double): Scale factor for joint velocity (rad per unit twist)
+ *   - joint_names (string_array): List of joint names for trajectory control
  */
 class TeleopTwistControllerNode : public rclcpp::Node
 {
@@ -62,6 +63,7 @@ private:
   // Helper methods
   void publish_pose_command(const geometry_msgs::msg::PoseStamped & pose);
   void publish_joint_command(const sensor_msgs::msg::JointState & joint_state);
+  sensor_msgs::msg::JointState filter_joint_state(const sensor_msgs::msg::JointState & joint_state);
 
   // Subscribers
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr pose_twist_sub_;
@@ -77,9 +79,10 @@ private:
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_callback_handle_;
 
   // Parameters
-  double linear_scale_;     // Scale factor for linear velocity (m per unit twist)
-  double angular_scale_;    // Scale factor for angular velocity (rad per unit twist)
-  double joint_vel_scale_;  // Scale factor for joint velocity (rad per unit twist)
+  double linear_scale_;                   // Scale factor for linear velocity (m per unit twist)
+  double angular_scale_;                  // Scale factor for angular velocity (rad per unit twist)
+  double joint_vel_scale_;                // Scale factor for joint velocity (rad per unit twist)
+  std::vector<std::string> joint_names_;  // List of joint names for trajectory control
 
   // State
   geometry_msgs::msg::PoseStamped current_pose_;
