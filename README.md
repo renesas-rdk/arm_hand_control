@@ -81,6 +81,7 @@ Provides an action server for executing pick-and-place operations with the robot
 - **Published Topics**:
   - `/arm/pose_command` (geometry_msgs/PoseStamped) - Commands for arm end-effector
   - `/arm/gripper_command` (control_msgs/GripperCommand) - Commands for gripper
+  - `/arm/speed` (control_msgs/DynamicInterfaceGroupValues) - Dynamic speed control commands
 
 - **Subscribed Topics**:
   - `/arm/current_pose` (geometry_msgs/PoseStamped) - Current end-effector pose

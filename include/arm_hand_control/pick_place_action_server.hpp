@@ -20,13 +20,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <control_msgs/msg/dynamic_interface_group_values.hpp>
 #include <control_msgs/msg/gripper_command.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <std_srvs/srv/set_bool.hpp>
 
 #include "arm_hand_control/action/pick_place.hpp"
 
@@ -45,6 +45,7 @@ namespace arm_hand_control
 // Published Topics:
 // - /arm/pose_command (geometry_msgs/PoseStamped): Commands for arm end-effector
 // - /arm/gripper_command (control_msgs/GripperCommand): Commands for gripper
+// - /arm/speed (control_msgs/DynamicInterfaceGroupValues): Dynamic speed control commands
 //
 // Subscribed Topics:
 // - /arm/current_pose (geometry_msgs/PoseStamped): Current end-effector pose
@@ -119,7 +120,7 @@ private:
 
   // Helper methods
   bool move_to_home();
-  bool set_arm_high_speed(bool high_speed);
+  void set_arm_speed(double speed);
   bool move_to_pose(
     const geometry_msgs::msg::PoseStamped & target_pose, const std::string & stage_name,
     float progress_start, float progress_end, std::shared_ptr<PickPlace::Feedback> feedback,
@@ -144,10 +145,8 @@ private:
   // ROS2 communication
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr arm_cmd_pub_;
   rclcpp::Publisher<control_msgs::msg::GripperCommand>::SharedPtr gripper_cmd_pub_;
+  rclcpp::Publisher<control_msgs::msg::DynamicInterfaceGroupValues>::SharedPtr speed_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-
-  // Service client
-  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr high_speed_client_;
 
   // Home position storage
   geometry_msgs::msg::PoseStamped home_pose_;

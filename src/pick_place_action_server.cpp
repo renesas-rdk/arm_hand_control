@@ -54,9 +54,8 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   arm_cmd_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/arm/pose_command", 10);
   gripper_cmd_pub_ =
     this->create_publisher<control_msgs::msg::GripperCommand>("/arm/gripper_command", 10);
-
-  // Create service client for speed control
-  high_speed_client_ = this->create_client<std_srvs::srv::SetBool>("/arm/set_high_speed");
+  speed_pub_ =
+    this->create_publisher<control_msgs::msg::DynamicInterfaceGroupValues>("/arm/speed", 10);
 
   // Create subscribers
   pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -153,9 +152,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   RCLCPP_INFO(this->get_logger(), "Starting pick-place execution");
 
   // Set initial speed to high speed (100%)
-  if (!set_arm_high_speed(true)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set initial arm speed");
-  }
+  set_arm_speed(100.0);
 
   // Stage 1: Open gripper
   if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
@@ -170,9 +167,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Set low speed for descending (10%)
-  if (!set_arm_high_speed(false)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
-  }
+  set_arm_speed(10.0);
 
   // Stage 3: Descend to pick position
   if (!descend_to_pick(goal->pick_pose, feedback, goal_handle)) {
@@ -193,9 +188,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Set high speed for transit (100%)
-  if (!set_arm_high_speed(true)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set high speed for transit");
-  }
+  set_arm_speed(100.0);
 
   // Stage 6: Approach place position
   if (!approach_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
@@ -204,9 +197,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Set low speed for descending (10%)
-  if (!set_arm_high_speed(false)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
-  }
+  set_arm_speed(10.0);
 
   // Stage 7: Descend to place position
   if (!descend_to_place(goal->place_pose, feedback, goal_handle)) {
@@ -227,9 +218,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Reset to high speed (100%)
-  if (!set_arm_high_speed(true)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to reset arm speed");
-  }
+  set_arm_speed(100.0);
 
   // Stage 10: Return to home position (optional based on action request)
   if (goal->return_to_home) {
@@ -510,37 +499,20 @@ void PickPlaceActionServer::pose_callback(const geometry_msgs::msg::PoseStamped:
   current_pose_ = *msg;
 }
 
-bool PickPlaceActionServer::set_arm_high_speed(bool high_speed)
+void PickPlaceActionServer::set_arm_speed(double speed)
 {
-  if (!high_speed_client_->wait_for_service(std::chrono::seconds(1))) {
-    RCLCPP_WARN(this->get_logger(), "Speed service not available");
-    return false;
-  }
+  // Create DynamicInterfaceGroupValues message following the pattern from launch file
+  auto msg = control_msgs::msg::DynamicInterfaceGroupValues();
+  msg.interface_groups.push_back("arm_motion_mode");
 
-  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
-  request->data = high_speed;
+  control_msgs::msg::InterfaceValue interface_value;
+  interface_value.interface_names.push_back("speed");
+  interface_value.values.push_back(speed);
+  msg.interface_values.push_back(interface_value);
 
-  // Use async call with callback instead of blocking
-  auto result_future = high_speed_client_->async_send_request(request);
+  speed_pub_->publish(msg);
 
-  // Wait for the result without spinning
-  auto status = result_future.wait_for(std::chrono::seconds(1));
-
-  if (status != std::future_status::ready) {
-    RCLCPP_ERROR(this->get_logger(), "Speed service call timed out");
-    return false;
-  }
-
-  auto response = result_future.get();
-  if (!response->success) {
-    RCLCPP_ERROR(
-      this->get_logger(), "Speed service returned failure: %s", response->message.c_str());
-    return false;
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(), "Set arm to %s", high_speed ? "high speed (100%)" : "low speed (10%)");
-  return true;
+  RCLCPP_INFO(this->get_logger(), "Set arm speed to %.1f%%", speed);
 }
 
 bool PickPlaceActionServer::move_to_home()

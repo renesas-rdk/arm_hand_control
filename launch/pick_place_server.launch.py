@@ -31,8 +31,9 @@ def generate_launch_description():
     Pipeline: pick-place action server → arm controller → foxglove visualization
 
     Topic flow:
-    - Pick-place action server publishes to: /arm/pose_command, /arm/gripper_command
+    - Pick-place action server publishes to: /arm/pose_command, /arm/gripper_command, /arm/speed
       and subscribes to: /arm/current_pose
+    - /arm/speed is remapped to /agilex_piper_gpio_controller/commands for dynamic speed control
     - Arm controller subscribes to: /arm/pose_command, /arm/joint_command, /arm/gripper_command
       and publishes: /arm/joint_states, /arm/gripper_joint_states, /arm/current_pose, /arm/status
     - Foxglove bridge allows visualization of all topics in Foxglove Studio
@@ -45,7 +46,6 @@ def generate_launch_description():
     - /piper/home: Move to home position
     - /piper/emergency_stop: Emergency stop
     - /piper/set_motion_mode: Set motion mode (true=Joint, false=Cartesian)
-    - /piper/set_high_speed: Set high speed mode for the arm
 
     Note: The arm controller starts with motion_mode=0 (Cartesian) for pick-place operations.
           The pick-place server waits for the arm controller to be ready before starting.
@@ -117,7 +117,7 @@ def generate_launch_description():
             ('/arm/pose_command', '/arm/pose_command'),
             ('/arm/gripper_command', '/arm/gripper_command'),
             ('/arm/current_pose', '/arm/current_pose'),
-            ('/arm/set_high_speed', '/piper/set_high_speed'),
+            ('/arm/speed', '/agilex_piper_gpio_controller/commands'),
         ]
     )
 

@@ -120,7 +120,6 @@ target_compile_features(pick_place_action_server PUBLIC c_std_99 cxx_std_17)
 ament_target_dependencies(pick_place_action_server
   rclcpp
   rclcpp_action
-  std_srvs
   geometry_msgs
   control_msgs
   tf2
