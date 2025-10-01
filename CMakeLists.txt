@@ -91,8 +91,6 @@ target_link_libraries(gesture_action_client
   "${cpp_typesupport_target}"
 )
 
-
-
 # hand landmark pose publisher
 add_executable(hand_landmark_pose_publisher src/hand_landmark_pose_publisher.cpp)
 ament_target_dependencies(hand_landmark_pose_publisher
@@ -122,13 +120,10 @@ target_compile_features(pick_place_action_server PUBLIC c_std_99 cxx_std_17)
 ament_target_dependencies(pick_place_action_server
   rclcpp
   rclcpp_action
-  std_msgs
   std_srvs
-  sensor_msgs
   geometry_msgs
   control_msgs
   tf2
-  tf2_geometry_msgs
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")

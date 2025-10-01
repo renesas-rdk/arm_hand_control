@@ -32,7 +32,7 @@ def generate_launch_description():
 
     Topic flow:
     - Pick-place action server publishes to: /arm/pose_command, /arm/gripper_command
-      and subscribes to: /arm/current_pose, /arm/joint_states, /arm/status
+      and subscribes to: /arm/current_pose
     - Arm controller subscribes to: /arm/pose_command, /arm/joint_command, /arm/gripper_command
       and publishes: /arm/joint_states, /arm/gripper_joint_states, /arm/current_pose, /arm/status
     - Foxglove bridge allows visualization of all topics in Foxglove Studio
@@ -117,8 +117,6 @@ def generate_launch_description():
             ('/arm/pose_command', '/arm/pose_command'),
             ('/arm/gripper_command', '/arm/gripper_command'),
             ('/arm/current_pose', '/arm/current_pose'),
-            ('/arm/joint_states', '/arm/joint_states'),
-            ('/arm/status', '/arm/status'),
             ('/arm/set_high_speed', '/piper/set_high_speed'),
         ]
     )

@@ -26,10 +26,7 @@
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
-#include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <std_srvs/srv/set_bool.hpp>
-#include <trajectory_msgs/msg/joint_trajectory.hpp>
 
 #include "arm_hand_control/action/pick_place.hpp"
 
@@ -51,8 +48,6 @@ namespace arm_hand_control
 //
 // Subscribed Topics:
 // - /arm/current_pose (geometry_msgs/PoseStamped): Current end-effector pose
-// - /arm/joint_states (sensor_msgs/JointState): Current joint states
-// - /arm/status (std_msgs/UInt8MultiArray): Arm status information
 //
 // Parameters:
 // - position_tolerance (double): Position tolerance in meters for pose reached check (default: 0.005)
@@ -145,15 +140,11 @@ private:
 
   // Subscriber callbacks
   void pose_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-  void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
-  void status_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg);
 
   // ROS2 communication
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr arm_cmd_pub_;
   rclcpp::Publisher<control_msgs::msg::GripperCommand>::SharedPtr gripper_cmd_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr status_sub_;
 
   // Service client
   rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr high_speed_client_;
@@ -168,8 +159,6 @@ private:
   // State tracking
   mutable std::mutex state_mutex_;
   geometry_msgs::msg::PoseStamped current_pose_;
-  sensor_msgs::msg::JointState current_joint_state_;
-  std::vector<uint8_t> current_status_;
   std::atomic<bool> gripper_command_sent_{false};
   std::chrono::steady_clock::time_point last_gripper_command_time_;
 

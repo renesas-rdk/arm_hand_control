@@ -84,8 +84,6 @@ Provides an action server for executing pick-and-place operations with the robot
 
 - **Subscribed Topics**:
   - `/arm/current_pose` (geometry_msgs/PoseStamped) - Current end-effector pose
-  - `/arm/joint_states` (sensor_msgs/JointState) - Current joint states
-  - `/arm/status` (std_msgs/UInt8MultiArray) - Arm status information
 
 The action server implements a state machine that sequences through:
 1. Open gripper (initial)

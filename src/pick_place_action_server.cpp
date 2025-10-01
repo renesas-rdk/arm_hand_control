@@ -63,14 +63,6 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
     "/arm/current_pose", 10,
     std::bind(&PickPlaceActionServer::pose_callback, this, std::placeholders::_1));
 
-  joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-    "/arm/joint_states", 10,
-    std::bind(&PickPlaceActionServer::joint_state_callback, this, std::placeholders::_1));
-
-  status_sub_ = this->create_subscription<std_msgs::msg::UInt8MultiArray>(
-    "/arm/status", 10,
-    std::bind(&PickPlaceActionServer::status_callback, this, std::placeholders::_1));
-
   // Create action server
   using namespace std::placeholders;
   action_server_ = rclcpp_action::create_server<PickPlace>(
@@ -516,18 +508,6 @@ void PickPlaceActionServer::pose_callback(const geometry_msgs::msg::PoseStamped:
 {
   std::lock_guard<std::mutex> lock(state_mutex_);
   current_pose_ = *msg;
-}
-
-void PickPlaceActionServer::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
-{
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  current_joint_state_ = *msg;
-}
-
-void PickPlaceActionServer::status_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg)
-{
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  current_status_ = msg->data;
 }
 
 bool PickPlaceActionServer::set_arm_high_speed(bool high_speed)
