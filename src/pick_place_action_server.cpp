@@ -30,7 +30,6 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   this->declare_parameter("position_tolerance", 0.005);    // 5mm
   this->declare_parameter("orientation_tolerance", 0.05);  // ~3 degrees
   this->declare_parameter("move_timeout", 2.0);            // 2 seconds
-  this->declare_parameter("gripper_timeout", 1.0);         // 1 second
   this->declare_parameter("gripper_settle_time", 0.5);     // 0.5 second
 
   // Home position parameters (default values for Piper arm)
@@ -47,7 +46,6 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   position_tolerance_ = this->get_parameter("position_tolerance").as_double();
   orientation_tolerance_ = this->get_parameter("orientation_tolerance").as_double();
   move_timeout_ = this->get_parameter("move_timeout").as_double();
-  gripper_timeout_ = this->get_parameter("gripper_timeout").as_double();
   gripper_settle_time_ = this->get_parameter("gripper_settle_time").as_double();
 
   // Create publishers
@@ -84,7 +82,6 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   RCLCPP_INFO(this->get_logger(), "Position tolerance: %.3f m", position_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Orientation tolerance: %.3f rad", orientation_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Move timeout: %.1f s", move_timeout_);
-  RCLCPP_INFO(this->get_logger(), "Gripper timeout: %.1f s", gripper_timeout_);
   RCLCPP_INFO(
     this->get_logger(), "Home position: [%.3f, %.3f, %.3f]", home_pose_.pose.position.x,
     home_pose_.pose.position.y, home_pose_.pose.position.z);
@@ -289,16 +286,10 @@ bool PickPlaceActionServer::close_gripper(
   auto gripper_cmd = control_msgs::msg::GripperCommand();
   gripper_cmd.position = closed_position;
   gripper_cmd.max_effort = force;
-
-  gripper_command_sent_ = true;
-  last_gripper_command_time_ = std::chrono::steady_clock::now();
   gripper_cmd_pub_->publish(gripper_cmd);
 
   // Wait for gripper to settle
-  if (!wait_for_gripper_command(gripper_settle_time_)) {
-    RCLCPP_ERROR(this->get_logger(), "Gripper close timeout");
-    return false;
-  }
+  wait_for_gripper_settle(gripper_settle_time_);
 
   feedback->progress = 0.4f;
   goal_handle->publish_feedback(feedback);
@@ -348,16 +339,10 @@ bool PickPlaceActionServer::open_gripper(
   auto gripper_cmd = control_msgs::msg::GripperCommand();
   gripper_cmd.position = open_position;
   gripper_cmd.max_effort = force;
-
-  gripper_command_sent_ = true;
-  last_gripper_command_time_ = std::chrono::steady_clock::now();
   gripper_cmd_pub_->publish(gripper_cmd);
 
   // Wait for gripper to settle
-  if (!wait_for_gripper_command(gripper_settle_time_)) {
-    RCLCPP_ERROR(this->get_logger(), "Gripper open timeout");
-    return false;
-  }
+  wait_for_gripper_settle(gripper_settle_time_);
 
   feedback->progress = feedback->progress > 0.7f ? 0.8f : 0.1f;
   goal_handle->publish_feedback(feedback);
@@ -430,21 +415,12 @@ bool PickPlaceActionServer::move_to_pose(
   return false;
 }
 
-bool PickPlaceActionServer::wait_for_gripper_command(double timeout_seconds)
+void PickPlaceActionServer::wait_for_gripper_settle(double settle_time_seconds)
 {
-  auto start_time = std::chrono::steady_clock::now();
-
-  while (rclcpp::ok()) {
-    auto elapsed = std::chrono::steady_clock::now() - start_time;
-    if (std::chrono::duration<double>(elapsed).count() >= timeout_seconds) {
-      gripper_command_sent_ = false;
-      return true;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-
-  return false;
+  // Simple settling delay to allow gripper to complete movement
+  // This provides time for the gripper hardware to reach the target position
+  std::this_thread::sleep_for(
+    std::chrono::milliseconds(static_cast<int>(settle_time_seconds * 1000)));
 }
 
 bool PickPlaceActionServer::is_pose_reached(

@@ -54,7 +54,6 @@ namespace arm_hand_control
 // - position_tolerance (double): Position tolerance in meters for pose reached check (default: 0.005)
 // - orientation_tolerance (double): Orientation tolerance in radians for pose reached check (default: 0.05)
 // - move_timeout (double): Timeout in seconds for each move operation (default: 10.0)
-// - gripper_timeout (double): Timeout in seconds for gripper operations (default: 3.0)
 // - gripper_settle_time (double): Time in seconds to wait for gripper to settle (default: 1.0)
 
 class PickPlaceActionServer : public rclcpp::Node
@@ -126,7 +125,7 @@ private:
     float progress_start, float progress_end, std::shared_ptr<PickPlace::Feedback> feedback,
     const std::shared_ptr<GoalHandlePickPlace> & goal_handle);
 
-  bool wait_for_gripper_command(double timeout_seconds);
+  void wait_for_gripper_settle(double settle_time_seconds);
 
   bool is_pose_reached(
     const geometry_msgs::msg::PoseStamped & target, const geometry_msgs::msg::PoseStamped & current,
@@ -158,14 +157,11 @@ private:
   // State tracking
   mutable std::mutex state_mutex_;
   geometry_msgs::msg::PoseStamped current_pose_;
-  std::atomic<bool> gripper_command_sent_{false};
-  std::chrono::steady_clock::time_point last_gripper_command_time_;
 
   // Parameters
   double position_tolerance_;     // meters
   double orientation_tolerance_;  // radians
   double move_timeout_;           // seconds
-  double gripper_timeout_;        // seconds
   double gripper_settle_time_;    // seconds
 };
 
