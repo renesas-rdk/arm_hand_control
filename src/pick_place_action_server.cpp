@@ -26,7 +26,7 @@ namespace arm_hand_control
 PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options)
 : Node("pick_place_action_server", options)
 {
-  // Declare parameters
+  // Declare control parameters
   this->declare_parameter("position_tolerance", 0.005);    // 5mm
   this->declare_parameter("orientation_tolerance", 0.05);  // ~3 degrees
   this->declare_parameter("move_timeout", 2.0);            // 2 seconds

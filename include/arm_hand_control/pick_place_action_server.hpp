@@ -18,7 +18,6 @@
 
 #include <tf2/LinearMath/Quaternion.h>
 
-#include <atomic>
 #include <chrono>
 #include <control_msgs/msg/dynamic_interface_group_values.hpp>
 #include <control_msgs/msg/gripper_command.hpp>
@@ -53,8 +52,11 @@ namespace arm_hand_control
 // Parameters:
 // - position_tolerance (double): Position tolerance in meters for pose reached check (default: 0.005)
 // - orientation_tolerance (double): Orientation tolerance in radians for pose reached check (default: 0.05)
-// - move_timeout (double): Timeout in seconds for each move operation (default: 10.0)
-// - gripper_settle_time (double): Time in seconds to wait for gripper to settle (default: 1.0)
+// - move_timeout (double): Timeout in seconds for each move operation (default: 2.0)
+// - gripper_settle_time (double): Time in seconds to wait for gripper to settle (default: 0.5)
+// - home_position.x/y/z (double): Home position coordinates (default: [0.06, 0.0, 0.22])
+// - home_orientation.x/y/z/w (double): Home orientation quaternion (default: [0.0, 0.68, 0.0, 0.74])
+// - home_gripper_position (double): Gripper position at home (default: 0.05)
 
 class PickPlaceActionServer : public rclcpp::Node
 {
