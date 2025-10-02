@@ -15,42 +15,81 @@
 # be subject to different terms.
 # *********************************************************************************************************************
 
+"""
+Launch pick-place action server for Agilex Piper arm.
+
+Launch Arguments:
+- use_native_cartesian (bool, default='false'):
+  Use native Cartesian control (hardware-level) instead of ROS2 controller-based control.
+  When true, uses GPIO controller topics for pose commands and feedback.
+  When false, uses Cartesian motion controller topics.
+
+Topic Remapping (when use_native_cartesian=false):
+- /arm/pose_command → /agilex_piper_cartesian_motion_controller/target_frame
+  Commands for Cartesian end-effector pose
+- /arm/current_pose → /agilex_piper_cartesian_motion_controller/current_pose
+  Feedback on current end-effector pose
+
+Topic Remapping (when use_native_cartesian=true):
+- /arm/pose_command → /agilex_piper_gpio_controller/target_pose
+  Commands for Cartesian end-effector pose (native control)
+- /arm/current_pose → /agilex_piper_gpio_controller/current_pose
+  Feedback on current end-effector pose (native control)
+
+Common Topic Remapping:
+- /arm/gripper_command → /gripper_command
+  Commands for gripper control
+- /arm/speed → /agilex_piper_gpio_controller/commands
+  Dynamic speed control commands
+
+Action Interface:
+- /pick_place (arm_hand_control/action/PickPlace): Execute pick-and-place operations
+
+Prerequisites:
+- Agilex Piper arm controller must be running:
+    For native control: ros2_control with gpio_controller
+    For ROS2 control: ros2_control with cartesian_motion_controller
+- robot_state_publisher should be running for the arm URDF
+- Gripper controller should be available
+
+Parameters:
+- position_tolerance: Position error threshold (meters)
+- orientation_tolerance: Orientation error threshold (radians)
+- move_timeout: Maximum time for each motion (seconds)
+- gripper_settle_time: Time to wait for gripper to stabilize (seconds)
+- use_current_pose_as_home: If true, uses first received pose as home (recommended)
+- home_position: Home position in Cartesian space if not using current pose (x, y, z in meters)
+- home_orientation: Home orientation if not using current pose as quaternion (x, y, z, w)
+- home_gripper_position: Gripper opening at home (meters)
+
+Usage:
+  # With ROS2 Cartesian motion controller (default):
+  ros2 launch arm_hand_control pick_place_server.launch.py
+
+  # With native Cartesian control (hardware-level):
+  ros2 launch arm_hand_control pick_place_server.launch.py use_native_cartesian:=true
+"""
+
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
-    """
-    Launch pick-place action server for Agilex Piper arm.
+def launch_setup(context, *args, **kwargs):
+    """Setup function to evaluate launch configurations at runtime."""
+    # Get launch configuration
+    use_native_cartesian_value = LaunchConfiguration('use_native_cartesian').perform(context)
 
-    Topic Remapping:
-    - /arm/pose_command → /agilex_piper_cartesian_motion_controller/target_frame
-      Commands for Cartesian end-effector pose
-    - /arm/current_pose → /agilex_piper_cartesian_motion_controller/current_pose
-      Feedback on current end-effector pose
-    - /arm/gripper_command → /gripper_command
-      Commands for gripper control
-    - /arm/speed → /agilex_piper_gpio_controller/commands
-      Dynamic speed control commands
-
-    Action Interface:
-    - /pick_place (arm_hand_control/action/PickPlace): Execute pick-and-place operations
-
-    Prerequisites:
-    - Agilex Piper arm controller must be running (ros2_control with cartesian_motion_controller)
-    - robot_state_publisher should be running for the arm URDF
-    - Gripper controller should be available
-
-    Parameters:
-    - position_tolerance: Position error threshold (meters)
-    - orientation_tolerance: Orientation error threshold (radians)
-    - move_timeout: Maximum time for each motion (seconds)
-    - gripper_settle_time: Time to wait for gripper to stabilize (seconds)
-    - use_current_pose_as_home: If true, uses first received pose as home (recommended)
-    - home_position: Home position in Cartesian space if not using current pose (x, y, z in meters)
-    - home_orientation: Home orientation if not using current pose as quaternion (x, y, z, w)
-    - home_gripper_position: Gripper opening at home (meters)
-    """
+    # Determine topic remapping based on control mode
+    if use_native_cartesian_value.lower() == 'true':
+        # Native Cartesian control mode (hardware-level)
+        pose_command_topic = '/agilex_piper_gpio_controller/target_pose'
+        current_pose_topic = '/agilex_piper_gpio_controller/current_pose'
+    else:
+        # ROS2 controller-based Cartesian control mode
+        pose_command_topic = '/agilex_piper_cartesian_motion_controller/target_frame'
+        current_pose_topic = '/agilex_piper_cartesian_motion_controller/current_pose'
 
     # Create the pick-place action server node
     pick_place_server = Node(
@@ -76,14 +115,27 @@ def generate_launch_description():
             'home_gripper_position': 0.05,    # meters (open position)
         }],
         remappings=[
-            # Remap to actual Agilex Piper controller topics
-            ('/arm/pose_command', '/agilex_piper_cartesian_motion_controller/target_frame'),
+            # Remap to actual Agilex Piper controller topics (based on control mode)
+            ('/arm/pose_command', pose_command_topic),
+            ('/arm/current_pose', current_pose_topic),
             ('/arm/gripper_command', '/gripper_command'),
-            ('/arm/current_pose', '/agilex_piper_cartesian_motion_controller/current_pose'),
             ('/arm/speed', '/agilex_piper_gpio_controller/commands'),
         ]
     )
 
+    return [pick_place_server]
+
+
+def generate_launch_description():
+    """Generate launch description for pick-place action server."""
+    # Declare launch argument
+    use_native_cartesian_arg = DeclareLaunchArgument(
+        'use_native_cartesian',
+        default_value='false',
+        description='Use native Cartesian control (true) or ROS2 controller-based control (false)'
+    )
+
     return LaunchDescription([
-        pick_place_server
+        use_native_cartesian_arg,
+        OpaqueFunction(function=launch_setup)
     ])
