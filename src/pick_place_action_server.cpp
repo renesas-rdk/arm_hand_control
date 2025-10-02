@@ -33,6 +33,7 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   this->declare_parameter("gripper_settle_time", 0.5);     // 0.5 second
 
   // Home position parameters (default values for Piper arm)
+  this->declare_parameter("use_current_pose_as_home", true);  // Use first received pose as home
   this->declare_parameter("home_position.x", 0.06);
   this->declare_parameter("home_position.y", 0.0);
   this->declare_parameter("home_position.z", 0.22);
@@ -68,31 +69,33 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
     std::bind(&PickPlaceActionServer::handle_accepted, this, _1));
 
   // Initialize home pose
-  home_pose_.header.frame_id = "base_link";
-  home_pose_.pose.position.x = this->get_parameter("home_position.x").as_double();
-  home_pose_.pose.position.y = this->get_parameter("home_position.y").as_double();
-  home_pose_.pose.position.z = this->get_parameter("home_position.z").as_double();
-  home_pose_.pose.orientation.x = this->get_parameter("home_orientation.x").as_double();
-  home_pose_.pose.orientation.y = this->get_parameter("home_orientation.y").as_double();
-  home_pose_.pose.orientation.z = this->get_parameter("home_orientation.z").as_double();
-  home_pose_.pose.orientation.w = this->get_parameter("home_orientation.w").as_double();
+  bool use_current_pose_as_home = this->get_parameter("use_current_pose_as_home").as_bool();
   home_gripper_position_ = this->get_parameter("home_gripper_position").as_double();
+  home_pose_initialized_ = false;
+
+  if (use_current_pose_as_home) {
+    RCLCPP_INFO(this->get_logger(), "Home position will be set from first received pose");
+    // Home pose will be set in pose_callback when first message arrives
+  } else {
+    // Use parameters for home position
+    home_pose_.header.frame_id = "base_link";
+    home_pose_.pose.position.x = this->get_parameter("home_position.x").as_double();
+    home_pose_.pose.position.y = this->get_parameter("home_position.y").as_double();
+    home_pose_.pose.position.z = this->get_parameter("home_position.z").as_double();
+    home_pose_.pose.orientation.x = this->get_parameter("home_orientation.x").as_double();
+    home_pose_.pose.orientation.y = this->get_parameter("home_orientation.y").as_double();
+    home_pose_.pose.orientation.z = this->get_parameter("home_orientation.z").as_double();
+    home_pose_.pose.orientation.w = this->get_parameter("home_orientation.w").as_double();
+    home_pose_initialized_ = true;
+    RCLCPP_INFO(
+      this->get_logger(), "Home position from parameters: [%.3f, %.3f, %.3f]",
+      home_pose_.pose.position.x, home_pose_.pose.position.y, home_pose_.pose.position.z);
+  }
 
   RCLCPP_INFO(this->get_logger(), "Pick-Place Action Server initialized");
   RCLCPP_INFO(this->get_logger(), "Position tolerance: %.3f m", position_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Orientation tolerance: %.3f rad", orientation_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Move timeout: %.1f s", move_timeout_);
-  RCLCPP_INFO(
-    this->get_logger(), "Home position: [%.3f, %.3f, %.3f]", home_pose_.pose.position.x,
-    home_pose_.pose.position.y, home_pose_.pose.position.z);
-
-  // Initialize arm to home position
-  RCLCPP_INFO(this->get_logger(), "Moving arm to home position...");
-  if (move_to_home()) {
-    RCLCPP_INFO(this->get_logger(), "Arm initialized at home position");
-  } else {
-    RCLCPP_WARN(this->get_logger(), "Failed to initialize arm to home position");
-  }
 }
 
 rclcpp_action::GoalResponse PickPlaceActionServer::handle_goal(
@@ -473,6 +476,15 @@ void PickPlaceActionServer::pose_callback(const geometry_msgs::msg::PoseStamped:
 {
   std::lock_guard<std::mutex> lock(state_mutex_);
   current_pose_ = *msg;
+
+  // Set home position from first received pose if not yet initialized
+  if (!home_pose_initialized_) {
+    home_pose_ = *msg;
+    home_pose_initialized_ = true;
+    RCLCPP_INFO(
+      this->get_logger(), "Home position set from current pose: [%.3f, %.3f, %.3f]",
+      home_pose_.pose.position.x, home_pose_.pose.position.y, home_pose_.pose.position.z);
+  }
 }
 
 void PickPlaceActionServer::set_arm_speed(double speed)

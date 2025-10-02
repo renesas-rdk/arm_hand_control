@@ -86,6 +86,18 @@ Provides an action server for executing pick-and-place operations with the robot
 - **Subscribed Topics**:
   - `/arm/current_pose` (geometry_msgs/PoseStamped) - Current end-effector pose
 
+- **Parameters**:
+  - `position_tolerance` (double, default: 0.005) - Position error threshold in meters
+  - `orientation_tolerance` (double, default: 0.05) - Orientation error threshold in radians
+  - `move_timeout` (double, default: 2.0) - Maximum time for each motion in seconds
+  - `gripper_settle_time` (double, default: 0.5) - Time to wait for gripper to stabilize in seconds
+  - `use_current_pose_as_home` (bool, default: true) - Use first received pose as home position (recommended)
+  - `home_position.x/y/z` (double) - Fallback home position if not using current pose
+  - `home_orientation.x/y/z/w` (double) - Fallback home orientation quaternion if not using current pose
+  - `home_gripper_position` (double, default: 0.05) - Gripper opening at home in meters
+
+**Home Position Strategy**: By default (`use_current_pose_as_home: true`), the action server captures the first received pose from `/arm/current_pose` as the home position. This is the recommended approach as it adapts to the actual arm state at startup. Alternatively, you can set `use_current_pose_as_home: false` to use explicit home position parameters.
+
 The action server implements a state machine that sequences through:
 1. Open gripper (initial)
 2. Approach pick position
@@ -136,6 +148,13 @@ ros2 launch arm_hand_control hand_gesture_interpreter.launch.py
 ```bash
 ros2 launch arm_hand_control pick_place_server.launch.py
 ```
+
+**Note**: The pick-place action server requires the following to be running:
+- Agilex Piper arm controller (ros2_control with cartesian_motion_controller)
+- robot_state_publisher for the arm URDF
+- Gripper controller
+
+The default configuration uses the actual Agilex Piper controller topics with automatic remapping.
 
 ### Configuration
 
