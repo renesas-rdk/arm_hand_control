@@ -26,14 +26,14 @@ namespace arm_hand_control
 PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options)
 : Node("pick_place_action_server", options)
 {
-  // Declare parameters
+  // Declare control parameters
   this->declare_parameter("position_tolerance", 0.005);    // 5mm
   this->declare_parameter("orientation_tolerance", 0.05);  // ~3 degrees
   this->declare_parameter("move_timeout", 2.0);            // 2 seconds
-  this->declare_parameter("gripper_timeout", 1.0);         // 1 second
   this->declare_parameter("gripper_settle_time", 0.5);     // 0.5 second
 
   // Home position parameters (default values for Piper arm)
+  this->declare_parameter("use_current_pose_as_home", true);  // Use first received pose as home
   this->declare_parameter("home_position.x", 0.06);
   this->declare_parameter("home_position.y", 0.0);
   this->declare_parameter("home_position.z", 0.22);
@@ -47,29 +47,19 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   position_tolerance_ = this->get_parameter("position_tolerance").as_double();
   orientation_tolerance_ = this->get_parameter("orientation_tolerance").as_double();
   move_timeout_ = this->get_parameter("move_timeout").as_double();
-  gripper_timeout_ = this->get_parameter("gripper_timeout").as_double();
   gripper_settle_time_ = this->get_parameter("gripper_settle_time").as_double();
 
   // Create publishers
   arm_cmd_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/arm/pose_command", 10);
   gripper_cmd_pub_ =
     this->create_publisher<control_msgs::msg::GripperCommand>("/arm/gripper_command", 10);
-
-  // Create service client for speed control
-  high_speed_client_ = this->create_client<std_srvs::srv::SetBool>("/arm/set_high_speed");
+  speed_pub_ =
+    this->create_publisher<control_msgs::msg::DynamicInterfaceGroupValues>("/arm/speed", 10);
 
   // Create subscribers
   pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
     "/arm/current_pose", 10,
     std::bind(&PickPlaceActionServer::pose_callback, this, std::placeholders::_1));
-
-  joint_state_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
-    "/arm/joint_states", 10,
-    std::bind(&PickPlaceActionServer::joint_state_callback, this, std::placeholders::_1));
-
-  status_sub_ = this->create_subscription<std_msgs::msg::UInt8MultiArray>(
-    "/arm/status", 10,
-    std::bind(&PickPlaceActionServer::status_callback, this, std::placeholders::_1));
 
   // Create action server
   using namespace std::placeholders;
@@ -79,32 +69,33 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
     std::bind(&PickPlaceActionServer::handle_accepted, this, _1));
 
   // Initialize home pose
-  home_pose_.header.frame_id = "base_link";
-  home_pose_.pose.position.x = this->get_parameter("home_position.x").as_double();
-  home_pose_.pose.position.y = this->get_parameter("home_position.y").as_double();
-  home_pose_.pose.position.z = this->get_parameter("home_position.z").as_double();
-  home_pose_.pose.orientation.x = this->get_parameter("home_orientation.x").as_double();
-  home_pose_.pose.orientation.y = this->get_parameter("home_orientation.y").as_double();
-  home_pose_.pose.orientation.z = this->get_parameter("home_orientation.z").as_double();
-  home_pose_.pose.orientation.w = this->get_parameter("home_orientation.w").as_double();
+  bool use_current_pose_as_home = this->get_parameter("use_current_pose_as_home").as_bool();
   home_gripper_position_ = this->get_parameter("home_gripper_position").as_double();
+  home_pose_initialized_ = false;
+
+  if (use_current_pose_as_home) {
+    RCLCPP_INFO(this->get_logger(), "Home position will be set from first received pose");
+    // Home pose will be set in pose_callback when first message arrives
+  } else {
+    // Use parameters for home position
+    home_pose_.header.frame_id = "base_link";
+    home_pose_.pose.position.x = this->get_parameter("home_position.x").as_double();
+    home_pose_.pose.position.y = this->get_parameter("home_position.y").as_double();
+    home_pose_.pose.position.z = this->get_parameter("home_position.z").as_double();
+    home_pose_.pose.orientation.x = this->get_parameter("home_orientation.x").as_double();
+    home_pose_.pose.orientation.y = this->get_parameter("home_orientation.y").as_double();
+    home_pose_.pose.orientation.z = this->get_parameter("home_orientation.z").as_double();
+    home_pose_.pose.orientation.w = this->get_parameter("home_orientation.w").as_double();
+    home_pose_initialized_ = true;
+    RCLCPP_INFO(
+      this->get_logger(), "Home position from parameters: [%.3f, %.3f, %.3f]",
+      home_pose_.pose.position.x, home_pose_.pose.position.y, home_pose_.pose.position.z);
+  }
 
   RCLCPP_INFO(this->get_logger(), "Pick-Place Action Server initialized");
   RCLCPP_INFO(this->get_logger(), "Position tolerance: %.3f m", position_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Orientation tolerance: %.3f rad", orientation_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Move timeout: %.1f s", move_timeout_);
-  RCLCPP_INFO(this->get_logger(), "Gripper timeout: %.1f s", gripper_timeout_);
-  RCLCPP_INFO(
-    this->get_logger(), "Home position: [%.3f, %.3f, %.3f]", home_pose_.pose.position.x,
-    home_pose_.pose.position.y, home_pose_.pose.position.z);
-
-  // Initialize arm to home position
-  RCLCPP_INFO(this->get_logger(), "Moving arm to home position...");
-  if (move_to_home()) {
-    RCLCPP_INFO(this->get_logger(), "Arm initialized at home position");
-  } else {
-    RCLCPP_WARN(this->get_logger(), "Failed to initialize arm to home position");
-  }
 }
 
 rclcpp_action::GoalResponse PickPlaceActionServer::handle_goal(
@@ -161,9 +152,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   RCLCPP_INFO(this->get_logger(), "Starting pick-place execution");
 
   // Set initial speed to high speed (100%)
-  if (!set_arm_high_speed(true)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set initial arm speed");
-  }
+  set_arm_speed(100.0);
 
   // Stage 1: Open gripper
   if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
@@ -178,9 +167,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Set low speed for descending (10%)
-  if (!set_arm_high_speed(false)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
-  }
+  set_arm_speed(10.0);
 
   // Stage 3: Descend to pick position
   if (!descend_to_pick(goal->pick_pose, feedback, goal_handle)) {
@@ -201,9 +188,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Set high speed for transit (100%)
-  if (!set_arm_high_speed(true)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set high speed for transit");
-  }
+  set_arm_speed(100.0);
 
   // Stage 6: Approach place position
   if (!approach_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
@@ -212,9 +197,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Set low speed for descending (10%)
-  if (!set_arm_high_speed(false)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to set low speed for descending");
-  }
+  set_arm_speed(10.0);
 
   // Stage 7: Descend to place position
   if (!descend_to_place(goal->place_pose, feedback, goal_handle)) {
@@ -235,9 +218,7 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
   }
 
   // Reset to high speed (100%)
-  if (!set_arm_high_speed(true)) {
-    RCLCPP_WARN(this->get_logger(), "Failed to reset arm speed");
-  }
+  set_arm_speed(100.0);
 
   // Stage 10: Return to home position (optional based on action request)
   if (goal->return_to_home) {
@@ -308,16 +289,10 @@ bool PickPlaceActionServer::close_gripper(
   auto gripper_cmd = control_msgs::msg::GripperCommand();
   gripper_cmd.position = closed_position;
   gripper_cmd.max_effort = force;
-
-  gripper_command_sent_ = true;
-  last_gripper_command_time_ = std::chrono::steady_clock::now();
   gripper_cmd_pub_->publish(gripper_cmd);
 
   // Wait for gripper to settle
-  if (!wait_for_gripper_command(gripper_settle_time_)) {
-    RCLCPP_ERROR(this->get_logger(), "Gripper close timeout");
-    return false;
-  }
+  wait_for_gripper_settle(gripper_settle_time_);
 
   feedback->progress = 0.4f;
   goal_handle->publish_feedback(feedback);
@@ -367,16 +342,10 @@ bool PickPlaceActionServer::open_gripper(
   auto gripper_cmd = control_msgs::msg::GripperCommand();
   gripper_cmd.position = open_position;
   gripper_cmd.max_effort = force;
-
-  gripper_command_sent_ = true;
-  last_gripper_command_time_ = std::chrono::steady_clock::now();
   gripper_cmd_pub_->publish(gripper_cmd);
 
   // Wait for gripper to settle
-  if (!wait_for_gripper_command(gripper_settle_time_)) {
-    RCLCPP_ERROR(this->get_logger(), "Gripper open timeout");
-    return false;
-  }
+  wait_for_gripper_settle(gripper_settle_time_);
 
   feedback->progress = feedback->progress > 0.7f ? 0.8f : 0.1f;
   goal_handle->publish_feedback(feedback);
@@ -449,21 +418,12 @@ bool PickPlaceActionServer::move_to_pose(
   return false;
 }
 
-bool PickPlaceActionServer::wait_for_gripper_command(double timeout_seconds)
+void PickPlaceActionServer::wait_for_gripper_settle(double settle_time_seconds)
 {
-  auto start_time = std::chrono::steady_clock::now();
-
-  while (rclcpp::ok()) {
-    auto elapsed = std::chrono::steady_clock::now() - start_time;
-    if (std::chrono::duration<double>(elapsed).count() >= timeout_seconds) {
-      gripper_command_sent_ = false;
-      return true;
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  }
-
-  return false;
+  // Simple settling delay to allow gripper to complete movement
+  // This provides time for the gripper hardware to reach the target position
+  std::this_thread::sleep_for(
+    std::chrono::milliseconds(static_cast<int>(settle_time_seconds * 1000)));
 }
 
 bool PickPlaceActionServer::is_pose_reached(
@@ -516,51 +476,31 @@ void PickPlaceActionServer::pose_callback(const geometry_msgs::msg::PoseStamped:
 {
   std::lock_guard<std::mutex> lock(state_mutex_);
   current_pose_ = *msg;
+
+  // Set home position from first received pose if not yet initialized
+  if (!home_pose_initialized_) {
+    home_pose_ = *msg;
+    home_pose_initialized_ = true;
+    RCLCPP_INFO(
+      this->get_logger(), "Home position set from current pose: [%.3f, %.3f, %.3f]",
+      home_pose_.pose.position.x, home_pose_.pose.position.y, home_pose_.pose.position.z);
+  }
 }
 
-void PickPlaceActionServer::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+void PickPlaceActionServer::set_arm_speed(double speed)
 {
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  current_joint_state_ = *msg;
-}
+  // Create DynamicInterfaceGroupValues message following the pattern from launch file
+  auto msg = control_msgs::msg::DynamicInterfaceGroupValues();
+  msg.interface_groups.push_back("arm_motion_mode");
 
-void PickPlaceActionServer::status_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg)
-{
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  current_status_ = msg->data;
-}
+  control_msgs::msg::InterfaceValue interface_value;
+  interface_value.interface_names.push_back("speed");
+  interface_value.values.push_back(speed);
+  msg.interface_values.push_back(interface_value);
 
-bool PickPlaceActionServer::set_arm_high_speed(bool high_speed)
-{
-  if (!high_speed_client_->wait_for_service(std::chrono::seconds(1))) {
-    RCLCPP_WARN(this->get_logger(), "Speed service not available");
-    return false;
-  }
+  speed_pub_->publish(msg);
 
-  auto request = std::make_shared<std_srvs::srv::SetBool::Request>();
-  request->data = high_speed;
-
-  // Use async call with callback instead of blocking
-  auto result_future = high_speed_client_->async_send_request(request);
-
-  // Wait for the result without spinning
-  auto status = result_future.wait_for(std::chrono::seconds(1));
-
-  if (status != std::future_status::ready) {
-    RCLCPP_ERROR(this->get_logger(), "Speed service call timed out");
-    return false;
-  }
-
-  auto response = result_future.get();
-  if (!response->success) {
-    RCLCPP_ERROR(
-      this->get_logger(), "Speed service returned failure: %s", response->message.c_str());
-    return false;
-  }
-
-  RCLCPP_INFO(
-    this->get_logger(), "Set arm to %s", high_speed ? "high speed (100%)" : "low speed (10%)");
-  return true;
+  RCLCPP_INFO(this->get_logger(), "Set arm speed to %.1f%%", speed);
 }
 
 bool PickPlaceActionServer::move_to_home()

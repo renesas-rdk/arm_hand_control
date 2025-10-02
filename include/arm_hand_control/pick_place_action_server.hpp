@@ -18,18 +18,14 @@
 
 #include <tf2/LinearMath/Quaternion.h>
 
-#include <atomic>
 #include <chrono>
+#include <control_msgs/msg/dynamic_interface_group_values.hpp>
 #include <control_msgs/msg/gripper_command.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
-#include <std_msgs/msg/u_int8_multi_array.hpp>
-#include <std_srvs/srv/set_bool.hpp>
-#include <trajectory_msgs/msg/joint_trajectory.hpp>
 
 #include "arm_hand_control/action/pick_place.hpp"
 
@@ -48,18 +44,20 @@ namespace arm_hand_control
 // Published Topics:
 // - /arm/pose_command (geometry_msgs/PoseStamped): Commands for arm end-effector
 // - /arm/gripper_command (control_msgs/GripperCommand): Commands for gripper
+// - /arm/speed (control_msgs/DynamicInterfaceGroupValues): Dynamic speed control commands
 //
 // Subscribed Topics:
 // - /arm/current_pose (geometry_msgs/PoseStamped): Current end-effector pose
-// - /arm/joint_states (sensor_msgs/JointState): Current joint states
-// - /arm/status (std_msgs/UInt8MultiArray): Arm status information
 //
 // Parameters:
 // - position_tolerance (double): Position tolerance in meters for pose reached check (default: 0.005)
 // - orientation_tolerance (double): Orientation tolerance in radians for pose reached check (default: 0.05)
-// - move_timeout (double): Timeout in seconds for each move operation (default: 10.0)
-// - gripper_timeout (double): Timeout in seconds for gripper operations (default: 3.0)
-// - gripper_settle_time (double): Time in seconds to wait for gripper to settle (default: 1.0)
+// - move_timeout (double): Timeout in seconds for each move operation (default: 2.0)
+// - gripper_settle_time (double): Time in seconds to wait for gripper to settle (default: 0.5)
+// - use_current_pose_as_home (bool): Use first received pose as home position (default: true)
+// - home_position.x/y/z (double): Home position coordinates if not using current pose (default: [0.06, 0.0, 0.22])
+// - home_orientation.x/y/z/w (double): Home orientation quaternion if not using current pose (default: [0.0, 0.68, 0.0, 0.74])
+// - home_gripper_position (double): Gripper position at home (default: 0.05)
 
 class PickPlaceActionServer : public rclcpp::Node
 {
@@ -124,13 +122,13 @@ private:
 
   // Helper methods
   bool move_to_home();
-  bool set_arm_high_speed(bool high_speed);
+  void set_arm_speed(double speed);
   bool move_to_pose(
     const geometry_msgs::msg::PoseStamped & target_pose, const std::string & stage_name,
     float progress_start, float progress_end, std::shared_ptr<PickPlace::Feedback> feedback,
     const std::shared_ptr<GoalHandlePickPlace> & goal_handle);
 
-  bool wait_for_gripper_command(double timeout_seconds);
+  void wait_for_gripper_settle(double settle_time_seconds);
 
   bool is_pose_reached(
     const geometry_msgs::msg::PoseStamped & target, const geometry_msgs::msg::PoseStamped & current,
@@ -145,22 +143,17 @@ private:
 
   // Subscriber callbacks
   void pose_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
-  void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
-  void status_callback(const std_msgs::msg::UInt8MultiArray::SharedPtr msg);
 
   // ROS2 communication
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr arm_cmd_pub_;
   rclcpp::Publisher<control_msgs::msg::GripperCommand>::SharedPtr gripper_cmd_pub_;
+  rclcpp::Publisher<control_msgs::msg::DynamicInterfaceGroupValues>::SharedPtr speed_pub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-  rclcpp::Subscription<std_msgs::msg::UInt8MultiArray>::SharedPtr status_sub_;
-
-  // Service client
-  rclcpp::Client<std_srvs::srv::SetBool>::SharedPtr high_speed_client_;
 
   // Home position storage
   geometry_msgs::msg::PoseStamped home_pose_;
   double home_gripper_position_;
+  bool home_pose_initialized_;
 
   // Action server
   rclcpp_action::Server<PickPlace>::SharedPtr action_server_;
@@ -168,16 +161,11 @@ private:
   // State tracking
   mutable std::mutex state_mutex_;
   geometry_msgs::msg::PoseStamped current_pose_;
-  sensor_msgs::msg::JointState current_joint_state_;
-  std::vector<uint8_t> current_status_;
-  std::atomic<bool> gripper_command_sent_{false};
-  std::chrono::steady_clock::time_point last_gripper_command_time_;
 
   // Parameters
   double position_tolerance_;     // meters
   double orientation_tolerance_;  // radians
   double move_timeout_;           // seconds
-  double gripper_timeout_;        // seconds
   double gripper_settle_time_;    // seconds
 };
 
