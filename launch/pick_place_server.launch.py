@@ -68,6 +68,12 @@ Usage:
 
   # With native Cartesian control (hardware-level):
   ros2 launch arm_hand_control pick_place_server.launch.py use_native_cartesian:=true
+
+  # Example action call:
+  ros2 action send_goal /pick_place arm_hand_control/action/PickPlace \
+    "{pick_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.2, y: 0.0, z: 0.05}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
+    place_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.3, y: 0.1, z: 0.05}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
+    approach_height: 0.05, gripper_open_position: 0.03, gripper_closed_position: 0.01, gripper_force: 1.0, return_to_home: true}"
 """
 
 from launch import LaunchDescription
