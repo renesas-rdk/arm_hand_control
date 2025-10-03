@@ -41,7 +41,7 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   this->declare_parameter("home_orientation.y", 0.68);
   this->declare_parameter("home_orientation.z", 0.0);
   this->declare_parameter("home_orientation.w", 0.74);
-  this->declare_parameter("home_gripper_position", 0.05);
+  this->declare_parameter("home_gripper_position", 0.0);  // Hand closed position
 
   // Get parameters
   position_tolerance_ = this->get_parameter("position_tolerance").as_double();

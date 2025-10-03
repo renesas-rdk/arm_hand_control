@@ -118,7 +118,7 @@ def launch_setup(context, *args, **kwargs):
             'home_orientation.y': 0.68,       # quaternion y (approx 45° pitch)
             'home_orientation.z': 0.0,        # quaternion z
             'home_orientation.w': 0.74,       # quaternion w
-            'home_gripper_position': 0.05,    # meters (open position)
+            'home_gripper_position': 0.0,     # hand closed position
         }],
         remappings=[
             # Remap to actual Agilex Piper controller topics (based on control mode)
