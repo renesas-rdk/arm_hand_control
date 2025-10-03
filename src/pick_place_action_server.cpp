@@ -53,8 +53,14 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   arm_cmd_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/arm/pose_command", 10);
   gripper_cmd_pub_ =
     this->create_publisher<control_msgs::msg::GripperCommand>("/arm/gripper_command", 10);
+
+  // Speed publisher with TRANSIENT_LOCAL QoS for reliable delivery
+  // This ensures late-joining subscribers receive the last published value
+  auto speed_qos = rclcpp::QoS(10)
+                     .reliability(rclcpp::ReliabilityPolicy::Reliable)
+                     .durability(rclcpp::DurabilityPolicy::TransientLocal);
   speed_pub_ =
-    this->create_publisher<control_msgs::msg::DynamicInterfaceGroupValues>("/arm/speed", 10);
+    this->create_publisher<control_msgs::msg::DynamicInterfaceGroupValues>("/arm/speed", speed_qos);
 
   // Create subscribers
   pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -498,7 +504,14 @@ void PickPlaceActionServer::set_arm_speed(double speed)
   interface_value.values.push_back(speed);
   msg.interface_values.push_back(interface_value);
 
-  speed_pub_->publish(msg);
+  // Publish multiple times for reliability (especially for late-joining subscribers)
+  // The TRANSIENT_LOCAL QoS ensures the last message is retained
+  for (int i = 0; i < 3; ++i) {
+    speed_pub_->publish(msg);
+  }
+
+  // Allow settling time for message propagation
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   RCLCPP_INFO(this->get_logger(), "Set arm speed to %.1f%%", speed);
 }
