@@ -54,6 +54,8 @@ namespace arm_hand_control
 // - orientation_tolerance (double): Orientation tolerance in radians for pose reached check (default: 0.05)
 // - move_timeout (double): Timeout in seconds for each move operation (default: 2.0)
 // - gripper_settle_time (double): Time in seconds to wait for gripper to settle (default: 0.5)
+// - high_speed (double): High speed percentage for fast movements (default: 100.0)
+// - low_speed (double): Low speed percentage for precise movements (default: 10.0)
 // - use_current_pose_as_home (bool): Use first received pose as home position (default: true)
 // - home_position.x/y/z (double): Home position coordinates if not using current pose (default: [0.06, 0.0, 0.22])
 // - home_orientation.x/y/z/w (double): Home orientation quaternion if not using current pose (default: [0.0, 0.68, 0.0, 0.74])
@@ -167,6 +169,8 @@ private:
   double orientation_tolerance_;  // radians
   double move_timeout_;           // seconds
   double gripper_settle_time_;    // seconds
+  double high_speed_;             // percentage (0-100)
+  double low_speed_;              // percentage (0-100)
 };
 
 }  // namespace arm_hand_control

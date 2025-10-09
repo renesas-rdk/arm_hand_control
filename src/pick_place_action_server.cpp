@@ -31,6 +31,8 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   this->declare_parameter("orientation_tolerance", 0.05);  // ~3 degrees
   this->declare_parameter("move_timeout", 2.0);            // 2 seconds
   this->declare_parameter("gripper_settle_time", 0.5);     // 0.5 second
+  this->declare_parameter("high_speed", 100.0);            // 100% speed for fast movements
+  this->declare_parameter("low_speed", 10.0);              // 10% speed for precise movements
 
   // Home position parameters (default values for Piper arm)
   this->declare_parameter("use_current_pose_as_home", true);  // Use first received pose as home
@@ -48,6 +50,8 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   orientation_tolerance_ = this->get_parameter("orientation_tolerance").as_double();
   move_timeout_ = this->get_parameter("move_timeout").as_double();
   gripper_settle_time_ = this->get_parameter("gripper_settle_time").as_double();
+  high_speed_ = this->get_parameter("high_speed").as_double();
+  low_speed_ = this->get_parameter("low_speed").as_double();
 
   // Create publishers
   arm_cmd_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/arm/pose_command", 10);
@@ -102,6 +106,8 @@ PickPlaceActionServer::PickPlaceActionServer(const rclcpp::NodeOptions & options
   RCLCPP_INFO(this->get_logger(), "Position tolerance: %.3f m", position_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Orientation tolerance: %.3f rad", orientation_tolerance_);
   RCLCPP_INFO(this->get_logger(), "Move timeout: %.1f s", move_timeout_);
+  RCLCPP_INFO(this->get_logger(), "High speed: %.1f%%", high_speed_);
+  RCLCPP_INFO(this->get_logger(), "Low speed: %.1f%%", low_speed_);
 }
 
 rclcpp_action::GoalResponse PickPlaceActionServer::handle_goal(
@@ -157,8 +163,8 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
 
   RCLCPP_INFO(this->get_logger(), "Starting pick-place execution");
 
-  // Set initial speed to high speed (100%)
-  set_arm_speed(100.0);
+  // Set initial speed to high speed
+  set_arm_speed(high_speed_);
 
   // Stage 1: Open gripper
   if (!open_gripper(goal->gripper_open_position, goal->gripper_force, feedback, goal_handle)) {
@@ -172,8 +178,8 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     return;
   }
 
-  // Set low speed for descending (10%)
-  set_arm_speed(10.0);
+  // Set low speed for descending
+  set_arm_speed(low_speed_);
 
   // Stage 3: Descend to pick position
   if (!descend_to_pick(goal->pick_pose, feedback, goal_handle)) {
@@ -193,8 +199,8 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     return;
   }
 
-  // Set high speed for transit (100%)
-  set_arm_speed(100.0);
+  // Set high speed for transit
+  set_arm_speed(high_speed_);
 
   // Stage 6: Approach place position
   if (!approach_place(goal->place_pose, goal->approach_height, feedback, goal_handle)) {
@@ -202,8 +208,8 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     return;
   }
 
-  // Set low speed for descending (10%)
-  set_arm_speed(10.0);
+  // Set low speed for descending
+  set_arm_speed(low_speed_);
 
   // Stage 7: Descend to place position
   if (!descend_to_place(goal->place_pose, feedback, goal_handle)) {
@@ -223,8 +229,8 @@ void PickPlaceActionServer::execute(const std::shared_ptr<GoalHandlePickPlace> g
     return;
   }
 
-  // Reset to high speed (100%)
-  set_arm_speed(100.0);
+  // Reset to high speed
+  set_arm_speed(high_speed_);
 
   // Stage 10: Return to home position (optional based on action request)
   if (goal->return_to_home) {
