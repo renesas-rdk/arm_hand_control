@@ -50,10 +50,10 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   // Load configuration
   load_configuration();
 
-  // Create publisher
+  // Create publisher for position commands
   auto qos = rclcpp::QoS(1).reliable().durability_volatile();
-  joint_state_publisher_ =
-    this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
+  position_command_publisher_ =
+    this->create_publisher<std_msgs::msg::Float64MultiArray>("position_controller_command", 10);
 
   // Create subscriber (keep for backward compatibility)
   gesture_subscriber_ = this->create_subscription<std_msgs::msg::String>(
@@ -100,9 +100,7 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
     this->get_logger(), "Listening for hand landmarks on topic: %s",
     landmarks_subscriber_->get_topic_name());
   RCLCPP_INFO(this->get_logger(), "Gesture action server started: execute_gesture");
-  RCLCPP_INFO(
-    this->get_logger(), "Publishing joint states on topic: %s",
-    joint_state_publisher_->get_topic_name());
+
   RCLCPP_INFO(this->get_logger(), "Using configuration file: %s", config_file_path_.c_str());
   RCLCPP_INFO(this->get_logger(), "Auto demo enabled: %s", auto_demo_enabled_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "Gesture duration: %.2f seconds", gesture_duration_);
@@ -121,6 +119,16 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
     RCLCPP_INFO(this->get_logger(), "Auto demo mode enabled");
     start_demo_mode();
   }
+}
+
+
+HandGestureInterpreter::~HandGestureInterpreter()
+{
+  RCLCPP_INFO(this->get_logger(), "Hand gesture interpreter shutting down");
+  landmarks_subscriber_.reset();
+  gesture_subscriber_.reset();
+  gripper_command_subscriber_.reset();
+  position_command_publisher_.reset();
 }
 
 //===== ACTION SERVER METHODS =====
@@ -302,6 +310,7 @@ void HandGestureInterpreter::load_configuration()
         joint_config.default_position = joints[i]["default_position"].as<double>();
 
         // Store joint info
+        joint_order_.push_back(joint_config);
         joint_names_.push_back(joint_config.name);
         joint_positions_[joint_config.name] = joint_config.default_position;
         joint_limits_[joint_config.name] = joint_config.limit_max;
@@ -329,9 +338,8 @@ void HandGestureInterpreter::load_configuration()
   } catch (const std::exception & e) {
     RCLCPP_ERROR(this->get_logger(), "Error loading configuration: %s", e.what());
     RCLCPP_INFO(this->get_logger(), "Using default configuration");
-
     // Define default joints with finger and role classifications
-    std::vector<JointConfig> default_joints = {
+    joint_order_ = {
       {"thumb_proximal_yaw_joint", "thumb", "yaw", 1.308, 0.0},
       {"thumb_proximal_pitch_joint", "thumb", "pitch", 0.6, 0.0},
       {"index_proximal_joint", "index", "flex", 1.47, 0.0},
@@ -339,7 +347,7 @@ void HandGestureInterpreter::load_configuration()
       {"ring_proximal_joint", "ring", "flex", 1.47, 0.0},
       {"pinky_proximal_joint", "pinky", "flex", 1.47, 0.0}};
 
-    for (const auto & joint : default_joints) {
+    for (const auto & joint : joint_order_) {
       joint_names_.push_back(joint.name);
       joint_positions_[joint.name] = joint.default_position;
       joint_limits_[joint.name] = joint.limit_max;
@@ -347,6 +355,46 @@ void HandGestureInterpreter::load_configuration()
       finger_joints_[joint.finger][joint.role].push_back(joint.name);
     }
   }
+}
+
+std::vector<double> HandGestureInterpreter::get_ordered_positions() const
+{
+  std::vector<double> result;
+
+  for (const auto & joint : joint_order_) {
+    auto it = joint_positions_.find(joint.name);
+
+    if (it == joint_positions_.end()) {
+      RCLCPP_WARN(this->get_logger(), "Missing joint: %s", joint.name.c_str());
+      result.push_back(joint.default_position);  // safer
+    } else {
+      result.push_back(it->second);
+    }
+  }
+
+  return result;
+}
+
+sensor_msgs::msg::JointState HandGestureInterpreter::build_joint_state_msg(
+  const std::vector<double> & data)
+{
+  sensor_msgs::msg::JointState msg;
+  msg.header.stamp = this->now();
+
+  for (size_t i = 0; i < joint_order_.size(); ++i) {
+    msg.name.push_back(joint_order_[i].name);
+    msg.position.push_back(data[i]);
+  }
+
+  return msg;
+}
+
+std_msgs::msg::Float64MultiArray HandGestureInterpreter::build_position_msg(
+  const std::vector<double> & data)
+{
+  std_msgs::msg::Float64MultiArray msg;
+  msg.data = data;
+  return msg;
 }
 
 //===== GESTURE TRANSITION METHODS =====
@@ -548,7 +596,6 @@ void HandGestureInterpreter::set_finger_position(
     if (role_it != finger_it->second.end()) {
       for (const auto & joint_name : role_it->second) {
         joint_positions_[joint_name] = joint_limits_[joint_name] * percentage;
-        ;
       }
     }
   }
@@ -580,15 +627,13 @@ void HandGestureInterpreter::set_all_fingers_except(
 
 void HandGestureInterpreter::publish_joint_states()
 {
-  auto msg = sensor_msgs::msg::JointState();
-  msg.header.stamp = this->now();
+  auto data = get_ordered_positions();
 
-  for (const auto & joint : joint_positions_) {
-    msg.name.push_back(joint.first);
-    msg.position.push_back(joint.second);
+  for (size_t i = 0; i < joint_order_.size(); ++i) {
+    RCLCPP_DEBUG(this->get_logger(), "joint[%s]: %f", joint_order_[i].name.c_str(), data[i]);
   }
-
-  joint_state_publisher_->publish(msg);
+  auto position_msg = build_position_msg(data);
+  position_command_publisher_->publish(position_msg);
 }
 
 void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::SharedPtr msg)

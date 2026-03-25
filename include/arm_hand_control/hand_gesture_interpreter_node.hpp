@@ -26,6 +26,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <string>
 #include <vector>
@@ -77,7 +78,7 @@ class HandGestureInterpreter : public rclcpp::Node
 {
 public:
   HandGestureInterpreter();
-  virtual ~HandGestureInterpreter() = default;
+ ~HandGestureInterpreter();
 
 private:
   //===== Action Server Type Definitions =====
@@ -85,13 +86,14 @@ private:
   using GoalHandleExecuteGesture = rclcpp_action::ServerGoalHandle<ExecuteGesture>;
 
   //===== ROS Communication =====
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr position_command_publisher_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr gesture_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmarks_subscriber_;
   rclcpp::Subscription<control_msgs::msg::GripperCommand>::SharedPtr gripper_command_subscriber_;
   rclcpp_action::Server<ExecuteGesture>::SharedPtr action_server_;
 
   //===== Joint State Data =====
+  std::vector<JointConfig> joint_order_;
   std::vector<std::string> joint_names_;
   std::map<std::string, double> joint_positions_;
   std::map<std::string, double> joint_limits_;
@@ -138,6 +140,9 @@ private:
 
   //===== Core Methods =====
   void load_configuration();
+  std::vector<double> get_ordered_positions() const;
+  sensor_msgs::msg::JointState build_joint_state_msg(const std::vector<double> & data);
+  std_msgs::msg::Float64MultiArray build_position_msg(const std::vector<double> & data);
   void publish_joint_states();
   void gesture_callback(const std_msgs::msg::String::SharedPtr msg);
   void gripper_command_callback(const control_msgs::msg::GripperCommand::SharedPtr msg);
