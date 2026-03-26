@@ -43,6 +43,7 @@ struct JointConfig
   std::string finger;       // Which finger this joint belongs to (thumb, index, etc.)
   std::string role;         // Joint's role (flex, yaw, pitch, etc.)
   double limit_max;         // Maximum joint limit (radians)
+  double velocity_limit;   // Maximum joint velocity limits
   double default_position;  // Default/rest position (radians)
 };
 
@@ -97,6 +98,7 @@ private:
   std::vector<std::string> joint_names_;
   std::map<std::string, double> joint_positions_;
   std::map<std::string, double> joint_limits_;
+  std::map<std::string, double> joint_velocity_limits_;
 
   //===== Gesture Transition Data =====
   std::map<std::string, double> target_positions_;
@@ -117,6 +119,7 @@ private:
   bool auto_demo_enabled_;        // Whether to auto loop through gestures
   double gesture_duration_;       // How long to hold each gesture in seconds
   double gripper_max_range_;      // Maximum gripper opening range in meters
+  double hand_speed_;
 
   //===== Demo Mode Related =====
   rclcpp::TimerBase::SharedPtr demo_timer_;
@@ -141,17 +144,14 @@ private:
   //===== Core Methods =====
   void load_configuration();
   std::vector<double> get_ordered_positions() const;
-  sensor_msgs::msg::JointState build_joint_state_msg(const std::vector<double> & data);
   std_msgs::msg::Float64MultiArray build_position_msg(const std::vector<double> & data);
   void publish_joint_states();
   void gesture_callback(const std_msgs::msg::String::SharedPtr msg);
   void gripper_command_callback(const control_msgs::msg::GripperCommand::SharedPtr msg);
   void execute_gesture(
     const std::string & gesture, double duration = -1.0, double percentage = -1.0);
-  void transition_timer_callback();
   void prepare_gesture_transition(const std::string & gesture, double percentage = -1.0);
-  void start_gesture_transition(double duration);
-  void finish_gesture_transition();
+  double calculate_estimated_duration();
 
   //===== Demo Mode Methods =====
   void start_demo_mode();
