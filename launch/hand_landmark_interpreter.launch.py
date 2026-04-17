@@ -15,24 +15,15 @@
 # be subject to different terms.
 # *********************************************************************************************************************
 
-import os
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
-    # Get the package directories
-    inspire_rh56_pkg_dir = get_package_share_directory('inspire_rh56_dexhand')
-
-    # Default config file path (from inspire_rh56_dexhand package)
-    default_config = os.path.join(inspire_rh56_pkg_dir, 'config/inspire_rh56.yaml')
-
-    # Declare the config file path as a launch argument
+    # Declare the config file path as a launch argument (required, no default)
     config_arg = DeclareLaunchArgument(
         'config_file',
-        default_value=default_config,
         description='Path to config file for hand parameters'
     )
 
