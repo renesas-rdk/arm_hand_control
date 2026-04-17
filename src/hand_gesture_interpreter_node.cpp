@@ -31,8 +31,9 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   this->declare_parameter("config_file", "");
   this->declare_parameter("auto_demo_enabled", true);
   this->declare_parameter("gesture_duration", 1.0);
-  this->declare_parameter("transition_duration", 0.5);  // Default smooth transition time
+  this->declare_parameter("transition_duration", 0.8);  // Default transition time for next gesture
   this->declare_parameter("gripper_max_range", 0.04);   // Default max gripper range in meters
+  this->declare_parameter("hand_speed", 1500.0);        // Default 1500 mstroke/s
 
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
@@ -40,6 +41,7 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   gesture_duration_ = this->get_parameter("gesture_duration").as_double();
   transition_duration_ = this->get_parameter("transition_duration").as_double();
   gripper_max_range_ = this->get_parameter("gripper_max_range").as_double();
+  hand_speed_ = this->get_parameter("hand_speed").as_double() * 0.001;
 
   // Make the path absolute if it's relative
   if (!std::filesystem::path(config_file_path_).is_absolute()) {
@@ -50,10 +52,10 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
   // Load configuration
   load_configuration();
 
-  // Create publisher
+  // Create publisher for position commands
   auto qos = rclcpp::QoS(1).reliable().durability_volatile();
-  joint_state_publisher_ =
-    this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
+  position_command_publisher_ =
+    this->create_publisher<std_msgs::msg::Float64MultiArray>("position_controller_command", 10);
 
   // Create subscriber (keep for backward compatibility)
   gesture_subscriber_ = this->create_subscription<std_msgs::msg::String>(
@@ -100,9 +102,7 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
     this->get_logger(), "Listening for hand landmarks on topic: %s",
     landmarks_subscriber_->get_topic_name());
   RCLCPP_INFO(this->get_logger(), "Gesture action server started: execute_gesture");
-  RCLCPP_INFO(
-    this->get_logger(), "Publishing joint states on topic: %s",
-    joint_state_publisher_->get_topic_name());
+
   RCLCPP_INFO(this->get_logger(), "Using configuration file: %s", config_file_path_.c_str());
   RCLCPP_INFO(this->get_logger(), "Auto demo enabled: %s", auto_demo_enabled_ ? "true" : "false");
   RCLCPP_INFO(this->get_logger(), "Gesture duration: %.2f seconds", gesture_duration_);
@@ -121,6 +121,15 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
     RCLCPP_INFO(this->get_logger(), "Auto demo mode enabled");
     start_demo_mode();
   }
+}
+
+HandGestureInterpreter::~HandGestureInterpreter()
+{
+  RCLCPP_INFO(this->get_logger(), "Hand gesture interpreter shutting down");
+  landmarks_subscriber_.reset();
+  gesture_subscriber_.reset();
+  gripper_command_subscriber_.reset();
+  position_command_publisher_.reset();
 }
 
 //===== ACTION SERVER METHODS =====
@@ -189,8 +198,13 @@ void HandGestureInterpreter::execute_gesture_action(
   // Store the goal handle for use in transition callbacks
   current_goal_handle_ = goal_handle;
 
+  // Calculate the estimated duration based on joint movements
+  double estimated_duration = calculate_estimated_duration();
+
   // Determine transition duration
   double duration = goal->duration > 0.0 ? goal->duration : transition_duration_;
+
+  duration = (duration > estimated_duration) ? duration : estimated_duration;
 
   // Execute the gesture with the requested parameters
   execute_gesture(goal->gesture_name, duration, goal->percentage);
@@ -269,14 +283,8 @@ void HandGestureInterpreter::demo_timer_callback()
   std::string current_gesture = gestures[current_gesture_idx_];
   RCLCPP_INFO(this->get_logger(), "Auto demo showing gesture: %s", current_gesture.c_str());
 
-  // Set a flag to indicate this is from the demo
-  demo_gesture_in_progress_ = true;
-
   // Execute the gesture with the default transition duration
   execute_gesture(current_gesture, transition_duration_);
-
-  // Reset the flag
-  demo_gesture_in_progress_ = false;
 
   // Move to next gesture
   current_gesture_idx_ = (current_gesture_idx_ + 1) % gestures.size();
@@ -299,12 +307,15 @@ void HandGestureInterpreter::load_configuration()
         joint_config.finger = joints[i]["finger"].as<std::string>();
         joint_config.role = joints[i]["role"].as<std::string>();
         joint_config.limit_max = joints[i]["limit_max"].as<double>();
+        joint_config.velocity_limit = joint_config.limit_max * hand_speed_;
         joint_config.default_position = joints[i]["default_position"].as<double>();
 
         // Store joint info
+        joint_order_.push_back(joint_config);
         joint_names_.push_back(joint_config.name);
         joint_positions_[joint_config.name] = joint_config.default_position;
         joint_limits_[joint_config.name] = joint_config.limit_max;
+        joint_velocity_limits_[joint_config.name] = joint_config.velocity_limit;
         joint_configs_[joint_config.name] = joint_config;
 
         // Create finger-to-role-to-joint mappings
@@ -329,24 +340,50 @@ void HandGestureInterpreter::load_configuration()
   } catch (const std::exception & e) {
     RCLCPP_ERROR(this->get_logger(), "Error loading configuration: %s", e.what());
     RCLCPP_INFO(this->get_logger(), "Using default configuration");
-
     // Define default joints with finger and role classifications
-    std::vector<JointConfig> default_joints = {
-      {"thumb_proximal_yaw_joint", "thumb", "yaw", 1.308, 0.0},
-      {"thumb_proximal_pitch_joint", "thumb", "pitch", 0.6, 0.0},
-      {"index_proximal_joint", "index", "flex", 1.47, 0.0},
-      {"middle_proximal_joint", "middle", "flex", 1.47, 0.0},
-      {"ring_proximal_joint", "ring", "flex", 1.47, 0.0},
-      {"pinky_proximal_joint", "pinky", "flex", 1.47, 0.0}};
+    joint_order_ = {
+      {"thumb_proximal_yaw_joint", "thumb", "yaw", 1.308, 0.0, 0.0},
+      {"thumb_proximal_pitch_joint", "thumb", "pitch", 0.6, 0.0, 0.0},
+      {"index_proximal_joint", "index", "flex", 1.47, 0.0, 0.0},
+      {"middle_proximal_joint", "middle", "flex", 1.47, 0.0, 0.0},
+      {"ring_proximal_joint", "ring", "flex", 1.47, 0.0, 0.0},
+      {"pinky_proximal_joint", "pinky", "flex", 1.47, 0.0, 0.0}};
 
-    for (const auto & joint : default_joints) {
+    for (const auto & joint : joint_order_) {
       joint_names_.push_back(joint.name);
       joint_positions_[joint.name] = joint.default_position;
       joint_limits_[joint.name] = joint.limit_max;
+      joint_velocity_limits_[joint.name] = joint.limit_max * hand_speed_;
       joint_configs_[joint.name] = joint;
       finger_joints_[joint.finger][joint.role].push_back(joint.name);
     }
   }
+}
+
+std::vector<double> HandGestureInterpreter::get_ordered_positions() const
+{
+  std::vector<double> result;
+
+  for (const auto & joint : joint_order_) {
+    auto it = joint_positions_.find(joint.name);
+
+    if (it == joint_positions_.end()) {
+      RCLCPP_WARN(this->get_logger(), "Missing joint: %s", joint.name.c_str());
+      result.push_back(joint.default_position);  // safer
+    } else {
+      result.push_back(it->second);
+    }
+  }
+
+  return result;
+}
+
+std_msgs::msg::Float64MultiArray HandGestureInterpreter::build_position_msg(
+  const std::vector<double> & data)
+{
+  std_msgs::msg::Float64MultiArray msg;
+  msg.data = data;
+  return msg;
 }
 
 //===== GESTURE TRANSITION METHODS =====
@@ -354,20 +391,44 @@ void HandGestureInterpreter::load_configuration()
 void HandGestureInterpreter::execute_gesture(
   const std::string & gesture, double duration, double percentage)
 {
-  // Cancel any ongoing transition
-  if (transition_timer_) {
-    transition_timer_->cancel();
-    transition_timer_.reset();
-    transition_in_progress_ = false;
-  }
-
-  // Prepare the target positions for the gesture
   prepare_gesture_transition(gesture, percentage);
+  joint_positions_ = target_positions_;
+  publish_joint_states();
+  double estimated_duration = calculate_estimated_duration();
 
-  // Start the transition with the specified duration
-  double transition_time = (duration > 0.0) ? duration : transition_duration_;
+  duration = (duration > estimated_duration) ? duration : estimated_duration;
+  RCLCPP_INFO(this->get_logger(), "duration : %2f", duration);
 
-  start_gesture_transition(transition_time);
+  // Simulation transition running
+  transition_in_progress_ = true;
+  transition_progress_ = 0.0;
+
+  // Timer for tracking progress
+  double update_freq = 20.0;
+  double dt = 1.0 / update_freq;
+
+  transition_timer_ = this->create_wall_timer(
+    std::chrono::milliseconds(static_cast<int>(1000.0 / update_freq)), [this, dt, duration]() {
+      transition_progress_ += dt / duration;
+      if (transition_progress_ >= 1.0) {
+        transition_progress_ = 1.0;
+        transition_in_progress_ = false;
+        transition_timer_->cancel();
+        transition_timer_.reset();
+        RCLCPP_INFO(this->get_logger(), "Gesture transition completed");
+      }
+    });
+}
+
+double HandGestureInterpreter::calculate_estimated_duration()
+{
+  double max_time = 0.0;
+  for (const auto & joint : joint_names_) {
+    double delta = std::abs(target_positions_[joint] - start_positions_[joint]);
+    double time = delta / joint_velocity_limits_[joint];
+    if (time > max_time) max_time = time;
+  }
+  return std::max(max_time, 0.1);  // min 100ms
 }
 
 void HandGestureInterpreter::prepare_gesture_transition(
@@ -464,79 +525,6 @@ void HandGestureInterpreter::prepare_gesture_transition(
   joint_positions_ = start_positions_;
 }
 
-void HandGestureInterpreter::start_gesture_transition(double duration)
-{
-  transition_in_progress_ = true;
-  transition_progress_ = 0.0;
-
-  // Store the requested duration
-  transition_duration_ = duration;
-
-  // Calculate update frequency (10 Hz should be smooth enough)
-  int update_frequency = 10;  // Hz
-  auto interval = std::chrono::milliseconds(static_cast<int>(1000.0 / update_frequency));
-
-  // Create a timer for smooth transition
-  transition_timer_ = this->create_wall_timer(
-    interval, std::bind(&HandGestureInterpreter::transition_timer_callback, this));
-
-  RCLCPP_INFO(
-    this->get_logger(), "Starting gesture transition with duration: %.2f seconds", duration);
-}
-
-void HandGestureInterpreter::transition_timer_callback()
-{
-  if (!transition_in_progress_) {
-    return;
-  }
-
-  // Update progress
-  transition_progress_ += 1.0 / (transition_duration_ * 10.0);  // 10 Hz update rate
-  if (transition_progress_ > 1.0) {
-    transition_progress_ = 1.0;
-  }
-
-  // Use smooth easing function (ease in-out cubic)
-  double t = transition_progress_;
-  double factor;
-  if (t < 0.5) {
-    factor = 4 * t * t * t;
-  } else {
-    factor = 1 - pow(-2 * t + 2, 3) / 2;
-  }
-
-  // Interpolate joint positions
-  for (const auto & joint : joint_names_) {
-    double start = start_positions_[joint];
-    double target = target_positions_[joint];
-    joint_positions_[joint] = start + factor * (target - start);
-  }
-
-  // Publish the updated joint states
-  publish_joint_states();
-
-  // Check if transition is complete
-  if (transition_progress_ >= 1.0) {
-    finish_gesture_transition();
-  }
-}
-
-void HandGestureInterpreter::finish_gesture_transition()
-{
-  // Stop the transition timer
-  transition_timer_->cancel();
-  transition_timer_.reset();
-
-  // Ensure final positions are exactly the target positions
-  joint_positions_ = target_positions_;
-  publish_joint_states();
-
-  // Clear transition state
-  transition_in_progress_ = false;
-
-  RCLCPP_INFO(this->get_logger(), "Gesture transition completed");
-}
-
 //===== FINGER ABSTRACTION METHODS =====
 
 void HandGestureInterpreter::set_finger_position(
@@ -548,7 +536,6 @@ void HandGestureInterpreter::set_finger_position(
     if (role_it != finger_it->second.end()) {
       for (const auto & joint_name : role_it->second) {
         joint_positions_[joint_name] = joint_limits_[joint_name] * percentage;
-        ;
       }
     }
   }
@@ -580,15 +567,13 @@ void HandGestureInterpreter::set_all_fingers_except(
 
 void HandGestureInterpreter::publish_joint_states()
 {
-  auto msg = sensor_msgs::msg::JointState();
-  msg.header.stamp = this->now();
+  auto data = get_ordered_positions();
 
-  for (const auto & joint : joint_positions_) {
-    msg.name.push_back(joint.first);
-    msg.position.push_back(joint.second);
+  for (size_t i = 0; i < joint_order_.size(); ++i) {
+    RCLCPP_DEBUG(this->get_logger(), "joint[%s]: %f", joint_order_[i].name.c_str(), data[i]);
   }
-
-  joint_state_publisher_->publish(msg);
+  auto position_msg = build_position_msg(data);
+  position_command_publisher_->publish(position_msg);
 }
 
 void HandGestureInterpreter::gesture_callback(const std_msgs::msg::String::SharedPtr msg)

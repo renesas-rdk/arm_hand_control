@@ -50,9 +50,8 @@ HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpr
     "hand_landmarks", qos,
     std::bind(&HandLandmarkInterpreter::landmark_callback, this, std::placeholders::_1));
 
-  // Create publisher for joint states
-  joint_state_publisher_ =
-    this->create_publisher<sensor_msgs::msg::JointState>("joint_states", qos);
+  position_command_publisher_ =
+    this->create_publisher<std_msgs::msg::Float64MultiArray>("position_controller_command", 10);
 
   RCLCPP_INFO(this->get_logger(), "Hand landmark interpreter started");
   RCLCPP_INFO(this->get_logger(), "Using curl smoothing factor: %.2f", curl_smooth_factor_);
@@ -62,8 +61,10 @@ HandLandmarkInterpreter::~HandLandmarkInterpreter()
 {
   RCLCPP_INFO(this->get_logger(), "Hand landmark interpreter shutting down");
   landmark_subscriber_.reset();
-  joint_state_publisher_.reset();
+  position_command_publisher_.reset();
 }
+
+//===== CONFIGURATION METHODS =====
 
 void HandLandmarkInterpreter::load_configuration()
 {
@@ -83,6 +84,7 @@ void HandLandmarkInterpreter::load_configuration()
         joint_config.default_position = joints[i]["default_position"].as<double>();
 
         // Store joint info
+        joint_order_.push_back(joint_config);
         joint_names_.push_back(joint_config.name);
         joint_positions_[joint_config.name] = joint_config.default_position;
         joint_limits_[joint_config.name] = joint_config.limit_max;
@@ -112,7 +114,7 @@ void HandLandmarkInterpreter::load_configuration()
     RCLCPP_INFO(this->get_logger(), "Using default configuration");
 
     // Define default joints with finger and role classifications
-    std::vector<JointConfig> default_joints = {
+    joint_order_ = {
       {"thumb_proximal_yaw_joint", "thumb", "yaw", 1.308, 0.0},
       {"thumb_proximal_pitch_joint", "thumb", "pitch", 0.6, 0.0},
       {"index_proximal_joint", "index", "flex", 1.47, 0.0},
@@ -120,7 +122,7 @@ void HandLandmarkInterpreter::load_configuration()
       {"ring_proximal_joint", "ring", "flex", 1.47, 0.0},
       {"pinky_proximal_joint", "pinky", "flex", 1.47, 0.0}};
 
-    for (const auto & joint : default_joints) {
+    for (const auto & joint : joint_order_) {
       joint_names_.push_back(joint.name);
       joint_positions_[joint.name] = joint.default_position;
       joint_limits_[joint.name] = joint.limit_max;
@@ -128,6 +130,32 @@ void HandLandmarkInterpreter::load_configuration()
       finger_joints_[joint.finger][joint.role].push_back(joint.name);
     }
   }
+}
+
+std::vector<double> HandLandmarkInterpreter::get_ordered_positions() const
+{
+  std::vector<double> result;
+
+  for (const auto & joint : joint_order_) {
+    auto it = joint_positions_.find(joint.name);
+
+    if (it == joint_positions_.end()) {
+      RCLCPP_WARN(this->get_logger(), "Missing joint: %s", joint.name.c_str());
+      result.push_back(joint.default_position);  // safer
+    } else {
+      result.push_back(it->second);
+    }
+  }
+
+  return result;
+}
+
+std_msgs::msg::Float64MultiArray HandLandmarkInterpreter::build_position_msg(
+  const std::vector<double> & data)
+{
+  std_msgs::msg::Float64MultiArray msg;
+  msg.data = data;
+  return msg;
 }
 
 void HandLandmarkInterpreter::landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg)
@@ -147,15 +175,13 @@ void HandLandmarkInterpreter::landmark_callback(const geometry_msgs::msg::PoseAr
 
 void HandLandmarkInterpreter::publish_joint_states()
 {
-  auto msg = sensor_msgs::msg::JointState();
-  msg.header.stamp = this->now();
+  auto data = get_ordered_positions();
 
-  for (const auto & joint : joint_positions_) {
-    msg.name.push_back(joint.first);
-    msg.position.push_back(joint.second);
+  for (size_t i = 0; i < joint_order_.size(); ++i) {
+    RCLCPP_DEBUG(this->get_logger(), "joint[%s]: %f", joint_order_[i].name.c_str(), data[i]);
   }
-
-  joint_state_publisher_->publish(msg);
+  auto position_msg = build_position_msg(data);
+  position_command_publisher_->publish(position_msg);
 }
 
 void HandLandmarkInterpreter::set_finger_position(

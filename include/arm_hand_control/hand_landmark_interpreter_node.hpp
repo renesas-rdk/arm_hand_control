@@ -22,6 +22,7 @@
 #include <map>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -67,6 +68,8 @@ public:
 
 private:
   void load_configuration();
+  std::vector<double> get_ordered_positions() const;
+  std_msgs::msg::Float64MultiArray build_position_msg(const std::vector<double> & data);
   void landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg);
   void publish_joint_states();
 
@@ -84,7 +87,7 @@ private:
 
   // Subscribers, publishers
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr position_command_publisher_;
 
   // Configuration data
   std::string config_file_path_;
@@ -92,6 +95,7 @@ private:
 
   // Joint data structures
   std::vector<std::string> joint_names_;
+  std::vector<JointConfig> joint_order_;
   std::map<std::string, double> joint_positions_;
   std::map<std::string, double> joint_limits_;
   std::map<std::string, JointConfig> joint_configs_;
