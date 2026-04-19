@@ -121,6 +121,10 @@ HandGestureInterpreter::HandGestureInterpreter() : Node("hand_gesture_interprete
     RCLCPP_INFO(this->get_logger(), "Auto demo mode enabled");
     start_demo_mode();
   }
+  else {
+    landmarks_demo_mode_stopped_ = true;
+    RCLCPP_INFO(this->get_logger(), "Auto demo mode disabled");
+  }
 }
 
 HandGestureInterpreter::~HandGestureInterpreter()
