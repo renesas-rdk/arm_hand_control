@@ -1,218 +1,58 @@
-# Arm Hand Control
+# arm_hand_control
 
-A ROS 2 package for controlling robotic hands through gesture recognition and landmark tracking.
-
-## Overview
-
-This package provides nodes for controlling robotic hands, particularly the Inspire RH56 Dexhand. It supports:
-- Hand gesture interpretation (predefined gestures)
-- Hand landmark interpretation (from hand tracking algorithms)
-- Direct control of the Inspire RH56 Dexhand hardware
-- Pick-and-place operations via action server
+ROS 2 package providing nodes for controlling a robotic arm and dexterous hand
+from vision-based hand landmarks, gesture commands, and pick-and-place actions.
 
 ## Nodes
 
-### 1. Hand Gesture Interpreter (`hand_gesture_interpreter_node`)
+| Executable | Description |
+|---|---|
+| `hand_gesture_interpreter` | Maps string gesture commands (`grasp`, `pinch`, `one`, …) to dexterous-hand joint positions. |
+| `hand_landmark_interpreter` | Converts a 21-point MediaPipe hand-landmark `PoseArray` into per-finger joint positions. |
+| `hand_landmark_gripper_retargeter` | Retargets thumb / index / middle pinch geometry into a 1-DoF parallel `GripperCommand`. |
+| `hand_landmark_pose_publisher` | Publishes hand-landmark poses for visualization / downstream consumers. |
+| `teleop_twist_controller` | Converts `Twist` input into joint trajectory commands for the arm. |
+| `pick_place_action_server` | Action server executing a pick-and-place sequence with arm pose + gripper commands. |
+| `gesture_action_client` | CLI client for the `ExecuteGesture` action. |
 
-Subscribes to string-based gesture commands and converts them into joint positions for the robotic hand.
+## Actions
 
-- **Subscriptions**:
-  - `hand_gesture` (std_msgs/String) - Commands like "grasp", "pinch", "point", etc.
-- **Publications**:
-  - `joint_states` (sensor_msgs/JointState) - Joint positions for the robotic hand
+- `ExecuteGesture.action`
+- `PickPlace.action`
 
-Supported gestures:
-- **Basic hand gestures**:
-  - grasp - Close all fingers
-  - pinch - Pinch gesture with thumb and index finger
-  - three_finger_grasp - Grasp with three fingers
-  - open_hand - Open all fingers
-  - loose_fist - A loosely closed hand
-  - grasp_X - Grasp with percentage X (e.g., "grasp_0.5" for 50% closed)
+## Launch Files
 
-- **Counting gestures**:
-  - one - Extend index finger only
-  - two - Extend index and middle fingers
-  - three - Extend thumb, index, and middle fingers
-  - four - Extend all fingers except thumb
-  - five - Open all fingers
-
-- **Communication gestures**:
-  - point - Extend index finger only
-  - thumbs_up - Extend thumb, close other fingers
-  - thumbs_down - Position thumb downward
-  - ok - Form an "OK" gesture
-  - call_me - Extend thumb and pinky
-  - peace - Extend index and middle fingers
-  - wave - Wave gesture (parameter controlled)
-
-- **Fun/special gestures**:
-  - rock - Extend index and pinky fingers
-  - fist_bump - Closed fist with thumb positioned alongside
-  - gun - Extend index finger with thumb perpendicular
-  - spider_man - Extend thumb, index, and pinky
-  - hang_loose - Extend thumb, index, and pinky
-  - thumbs_middle - Extend middle finger with thumb to the side
-  - finger_cross - Cross fingers gesture
-  - italian_hand - Traditional Italian hand gesture
-
-- **Demo mode control**:
-  - demo_start - Start automated cycling through gestures
-  - demo_stop - Stop automated gesture cycling
-
-### 2. Hand Landmark Interpreter (`hand_landmark_interpreter_node`)
-
-Transforms hand landmark positions (e.g., from MediaPipe or other vision systems) into joint positions.
-
-- **Subscriptions**:
-  - `hand_landmarks` (geometry_msgs/PoseArray) - 3D positions of hand landmarks
-- **Publications**:
-  - `joint_states` (sensor_msgs/JointState) - Joint positions for the robotic hand
-
-Processes 21 landmarks corresponding to the MediaPipe hand tracking model.
-
-### 3. Pick-Place Action Server (`pick_place_action_server`)
-
-Provides an action server for executing pick-and-place operations with the robotic arm and gripper.
-
-- **Action Server**:
-  - `pick_place` (arm_hand_control/action/PickPlace) - Execute pick-and-place operations
-
-- **Published Topics**:
-  - `/arm/pose_command` (geometry_msgs/PoseStamped) - Commands for arm end-effector
-  - `/arm/gripper_command` (control_msgs/GripperCommand) - Commands for gripper
-  - `/arm/speed` (control_msgs/DynamicInterfaceGroupValues) - Dynamic speed control commands
-
-- **Subscribed Topics**:
-  - `/arm/current_pose` (geometry_msgs/PoseStamped) - Current end-effector pose
-
-- **Parameters**:
-  - `position_tolerance` (double, default: 0.005) - Position error threshold in meters
-  - `orientation_tolerance` (double, default: 0.05) - Orientation error threshold in radians
-  - `move_timeout` (double, default: 2.0) - Maximum time for each motion in seconds
-  - `gripper_settle_time` (double, default: 0.5) - Time to wait for gripper to stabilize in seconds
-  - `use_current_pose_as_home` (bool, default: true) - Use first received pose as home position (recommended)
-  - `home_position.x/y/z` (double) - Fallback home position if not using current pose
-  - `home_orientation.x/y/z/w` (double) - Fallback home orientation quaternion if not using current pose
-  - `home_gripper_position` (double, default: 0.05) - Gripper opening at home in meters
-
-**Home Position Strategy**: By default (`use_current_pose_as_home: true`), the action server captures the first received pose from `/arm/current_pose` as the home position. This is the recommended approach as it adapts to the actual arm state at startup. Alternatively, you can set `use_current_pose_as_home: false` to use explicit home position parameters.
-
-The action server implements a state machine that sequences through:
-1. Open gripper (initial)
-2. Approach pick position
-3. Descend to pick
-4. Close gripper
-5. Lift object
-6. Approach place position
-7. Descend to place
-8. Open gripper
-9. Retreat from place
-10. Return to home position (optional, controlled by `return_to_home` parameter in action goal)
-
-## Installation
-
-```bash
-# Create workspace (if not already created)
-mkdir -p ~/ws/rz_ros2_ws/src
-cd ~/ws/rz_ros2_ws/src
-
-# Clone the repository (assuming it's part of a larger project)
-# git clone <repository-url>
-
-# Build the package
-cd ~/ws/rz_ros2_ws
-colcon build --symlink-install --packages-select arm_hand_control
-
-# Source the workspace
-source install/setup.bash
-```
+- `hand_gesture_interpreter.launch.py`
+- `hand_landmark_interpreter.launch.py`
+- `hand_landmark_gripper_retargeter.launch.py`
+- `pick_place_server.launch.py`
 
 ## Usage
 
-### Launch Files
-
-The package includes several launch files:
-
-1. Hand Landmark Interpreter:
 ```bash
-ros2 launch arm_hand_control hand_landmark_interpreter.launch.py
-```
+# Interpret hand landmarks into hand joint commands
+ros2 launch arm_hand_control hand_landmark_interpreter.launch.py \
+    config_file:=<path/to/hand_config.yaml>
 
-2. Hand Gesture Interpreter:
-```bash
-ros2 launch arm_hand_control hand_gesture_interpreter.launch.py
-```
+# Retarget hand landmarks into a parallel gripper command
+ros2 launch arm_hand_control hand_landmark_gripper_retargeter.launch.py
 
-3. Pick-Place Action Server:
-```bash
+# Drive the hand with a named gesture
+ros2 topic pub /hand_gesture std_msgs/String "data: 'grasp'"
+
+# Run a pick-and-place sequence
 ros2 launch arm_hand_control pick_place_server.launch.py
 ```
 
-**Note**: The pick-place action server requires the following to be running:
-- Agilex Piper arm controller (ros2_control with cartesian_motion_controller)
-- robot_state_publisher for the arm URDF
-- Gripper controller
+## Topics
 
-The default configuration uses the actual Agilex Piper controller topics with automatic remapping.
-
-### Configuration
-
-Configuration for the robotic hand is stored in YAML files in the `config/hand/` directory.
-The default configuration is for the Inspire RH56 Dexhand with the following joints:
-
-- Thumb (yaw and pitch)
-- Index finger
-- Middle finger
-- Ring finger
-- Pinky finger
-
-### Examples
-
-Send a gesture command:
-```bash
-ros2 topic pub /hand_gesture std_msgs/String "data: 'grasp'"
-```
-
-Send a gesture with parameter:
-```bash
-ros2 topic pub /hand_gesture std_msgs/String "data: 'grasp_0.5'"
-```
-
-Start demo mode to cycle through all gestures:
-```bash
-ros2 topic pub /hand_gesture std_msgs/String "data: 'demo_start'"
-```
-
-Send a pick-and-place action goal (using command line):
-```bash
-ros2 action send_goal /pick_place arm_hand_control/action/PickPlace \
-  "{pick_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.2, y: 0.0, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
-   place_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.3, y: 0.1, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
-   approach_height: 0.07, gripper_open_position: 0.03, gripper_closed_position: 0.01, gripper_force: 1.0, return_to_home: true}"
-```
-
-To execute a pick-and-place without returning to home position:
-```bash
-ros2 action send_goal /pick_place arm_hand_control/action/PickPlace \
-  "{pick_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.2, y: 0.0, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
-   place_pose: {header: {frame_id: 'base_link'}, pose: {position: {x: 0.3, y: 0.1, z: 0.17}, orientation: {x: 0.0, y: 1.0, z: 0.0, w: 0.0}}}, \
-   approach_height: 0.07, gripper_open_position: 0.03, gripper_closed_position: 0.01, gripper_force: 1.0, return_to_home: false}"
-```
-
-## Dependencies
-
-- ROS 2
-- sensor_msgs
-- std_msgs
-- geometry_msgs
-- control_msgs
-- trajectory_msgs
-- tf2
-- tf2_geometry_msgs
-- yaml-cpp
-- ament_index_cpp
+| Direction | Topic | Type | Used by |
+|---|---|---|---|
+| sub | `hand_landmarks` | `geometry_msgs/PoseArray` | landmark interpreter, gripper retargeter |
+| sub | `hand_gesture` | `std_msgs/String` | gesture interpreter |
+| pub | `position_controller_command` | `std_msgs/Float64MultiArray` | landmark interpreter |
+| pub | `hand_gripper_command` | `control_msgs/GripperCommand` | gripper retargeter |
 
 ## License
 
-This package is licensed under the MIT License.
+Apache License 2.0

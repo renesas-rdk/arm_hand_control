@@ -68,6 +68,14 @@ target_include_directories(hand_landmark_interpreter PUBLIC
   ${YAML_CPP_INCLUDE_DIRS}
 )
 
+# Hand landmark gripper retargeter
+add_executable(hand_landmark_gripper_retargeter src/hand_landmark_gripper_retargeter_node.cpp)
+ament_target_dependencies(hand_landmark_gripper_retargeter
+  rclcpp
+  geometry_msgs
+  control_msgs
+)
+
 # Teleop Twist Controller
 add_executable(teleop_twist_controller src/teleop_twist_controller_node.cpp)
 ament_target_dependencies(teleop_twist_controller
@@ -132,6 +140,7 @@ target_link_libraries(pick_place_action_server "${cpp_typesupport_target}")
 install(TARGETS
   hand_gesture_interpreter
   hand_landmark_interpreter
+  hand_landmark_gripper_retargeter
   teleop_twist_controller
   gesture_action_client
   hand_landmark_pose_publisher
