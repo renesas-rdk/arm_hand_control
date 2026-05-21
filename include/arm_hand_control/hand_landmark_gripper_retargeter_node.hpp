@@ -18,7 +18,10 @@
 
 #include <control_msgs/msg/gripper_command.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
+#include <mutex>
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/float64.hpp>
+#include <string>
 
 namespace arm_hand_control
 {
@@ -67,12 +70,17 @@ namespace arm_hand_control
  * Topics:
  * - Subscriptions:
  *   - hand_landmarks (geometry_msgs/PoseArray)
+ *   - gripper_max_width (std_msgs/Float64): optional runtime max width from
+ *     hand_gripper_action_adapter, derived from the selected YAML mapping.
  * - Publications:
  *   - gripper_command (control_msgs/GripperCommand) -- remap at launch time
  *     to the consumer's expected topic (e.g. "hand_gripper_command").
  *
  * Parameters:
- * - gripper_max_width (double): Upper bound of the gripper width in metres (default 0.06)
+ * - gripper_max_width (double): fallback upper bound when no runtime max-width
+ *   message is available (default 0.06)
+ * - max_width_topic (string): runtime max-width topic to subscribe to (default
+ *   "gripper_max_width")
  * - pinch_open_ratio (double): pinch/palm ratio mapped to gripper_max_width (default 1.2)
  * - pinch_close_ratio (double): pinch/palm ratio mapped to 0.0 (default 0.15)
  * - gripper_smooth_factor (double): EMA smoothing factor in [0, 1) (default 0.7)
@@ -85,11 +93,15 @@ public:
 
 private:
   void landmark_callback(const geometry_msgs::msg::PoseArray::SharedPtr msg);
+  void max_width_callback(const std_msgs::msg::Float64::SharedPtr msg);
 
   rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr landmark_subscriber_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr max_width_subscriber_;
   rclcpp::Publisher<control_msgs::msg::GripperCommand>::SharedPtr gripper_command_publisher_;
 
   // Retargeting parameters
+  std::mutex config_mutex_;
+  std::string max_width_topic_;
   double gripper_max_width_;
   double pinch_open_ratio_;
   double pinch_close_ratio_;

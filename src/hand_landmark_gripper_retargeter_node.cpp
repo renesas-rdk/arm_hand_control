@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <mutex>
 
 namespace arm_hand_control
 {
@@ -32,12 +33,14 @@ HandLandmarkGripperRetargeter::HandLandmarkGripperRetargeter()
 {
   // Declare parameters
   this->declare_parameter("gripper_max_width", 0.06);
+  this->declare_parameter("max_width_topic", "gripper_max_width");
   this->declare_parameter("pinch_open_ratio", 1.4);
   this->declare_parameter("pinch_close_ratio", 0.15);
   this->declare_parameter("gripper_smooth_factor", 0.7);
 
   // Get parameters
   gripper_max_width_ = this->get_parameter("gripper_max_width").as_double();
+  max_width_topic_ = this->get_parameter("max_width_topic").as_string();
   pinch_open_ratio_ = this->get_parameter("pinch_open_ratio").as_double();
   pinch_close_ratio_ = this->get_parameter("pinch_close_ratio").as_double();
   gripper_smooth_factor_ = this->get_parameter("gripper_smooth_factor").as_double();
@@ -63,6 +66,11 @@ HandLandmarkGripperRetargeter::HandLandmarkGripperRetargeter()
     "hand_landmarks", qos,
     std::bind(&HandLandmarkGripperRetargeter::landmark_callback, this, std::placeholders::_1));
 
+  auto max_width_qos = rclcpp::QoS(1).transient_local().reliable();
+  max_width_subscriber_ = this->create_subscription<std_msgs::msg::Float64>(
+    max_width_topic_, max_width_qos,
+    std::bind(&HandLandmarkGripperRetargeter::max_width_callback, this, std::placeholders::_1));
+
   // Output topic name is fixed; remap at launch time to wire it onto the
   // consumer's expected topic (e.g. hand_gripper_action_adapter's
   // "hand_gripper_command" or "gripper_command").
@@ -74,6 +82,9 @@ HandLandmarkGripperRetargeter::HandLandmarkGripperRetargeter()
     this->get_logger(), "Publishing GripperCommand on '%s' (max width: %.4f m)",
     gripper_command_publisher_->get_topic_name(), gripper_max_width_);
   RCLCPP_INFO(
+    this->get_logger(), "Listening for runtime gripper max width on '%s'",
+    max_width_subscriber_->get_topic_name());
+  RCLCPP_INFO(
     this->get_logger(), "Pinch ratio mapping: close=%.3f -> 0.0 m, open=%.3f -> %.4f m",
     pinch_close_ratio_, pinch_open_ratio_, gripper_max_width_);
 }
@@ -82,6 +93,7 @@ HandLandmarkGripperRetargeter::~HandLandmarkGripperRetargeter()
 {
   RCLCPP_INFO(this->get_logger(), "Hand landmark gripper retargeter shutting down");
   landmark_subscriber_.reset();
+  max_width_subscriber_.reset();
   gripper_command_publisher_.reset();
 }
 
@@ -128,15 +140,24 @@ void HandLandmarkGripperRetargeter::landmark_callback(
   const double span = pinch_open_ratio_ - pinch_close_ratio_;
   double normalized = (pinch_ratio - pinch_close_ratio_) / span;
   normalized = std::clamp(normalized, 0.0, 1.0);
-  double gripper_width = kMinGripperWidth + normalized * (gripper_max_width_ - kMinGripperWidth);
 
-  // EMA smoothing for stability.
-  if (has_prev_gripper_width_) {
-    const double s = std::clamp(gripper_smooth_factor_, 0.0, 0.99);
-    gripper_width = s * prev_gripper_width_ + (1.0 - s) * gripper_width;
+  double current_max_width = 0.06;
+  double gripper_width = kMinGripperWidth;
+  {
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    current_max_width = gripper_max_width_;
+
+    gripper_width = kMinGripperWidth + normalized * (current_max_width - kMinGripperWidth);
+
+    // EMA smoothing for stability.
+    if (has_prev_gripper_width_) {
+      const double s = std::clamp(gripper_smooth_factor_, 0.0, 0.99);
+      gripper_width = s * prev_gripper_width_ + (1.0 - s) * gripper_width;
+    }
+    gripper_width = std::clamp(gripper_width, kMinGripperWidth, current_max_width);
+    prev_gripper_width_ = gripper_width;
+    has_prev_gripper_width_ = true;
   }
-  prev_gripper_width_ = gripper_width;
-  has_prev_gripper_width_ = true;
 
   control_msgs::msg::GripperCommand cmd;
   cmd.position = gripper_width;
@@ -158,6 +179,29 @@ void HandLandmarkGripperRetargeter::landmark_callback(
     this->get_logger(), *this->get_clock(), 1000,
     "Gripper: pinch=%.4f, palm=%.4f, ratio=%.3f -> width=%.4f m", pinch, palm_ref, pinch_ratio,
     gripper_width);
+}
+
+void HandLandmarkGripperRetargeter::max_width_callback(const std_msgs::msg::Float64::SharedPtr msg)
+{
+  if (!std::isfinite(msg->data) || msg->data <= 0.0) {
+    RCLCPP_WARN(
+      this->get_logger(), "Ignoring invalid runtime gripper max width: %.4f m", msg->data);
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(config_mutex_);
+    if (std::abs(gripper_max_width_ - msg->data) < 1e-9) {
+      return;
+    }
+    gripper_max_width_ = msg->data;
+    if (has_prev_gripper_width_) {
+      prev_gripper_width_ = std::clamp(prev_gripper_width_, 0.001, gripper_max_width_);
+    }
+  }
+
+  RCLCPP_INFO(
+    this->get_logger(), "Runtime gripper max width updated from mapping: %.4f m", msg->data);
 }
 
 }  // namespace arm_hand_control
