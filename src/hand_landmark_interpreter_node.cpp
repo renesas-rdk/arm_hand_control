@@ -31,7 +31,7 @@ HandLandmarkInterpreter::HandLandmarkInterpreter() : Node("hand_landmark_interpr
 
   // Get parameters
   config_file_path_ = this->get_parameter("config_file").as_string();
-  curl_smooth_factor_ = this->get_parameter("curl_smooth_factor").as_double();
+  curl_smooth_factor_ = static_cast<float>(this->get_parameter("curl_smooth_factor").as_double());
 
   // Make the path absolute if it's relative
   if (!std::filesystem::path(config_file_path_).is_absolute()) {

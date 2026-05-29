@@ -216,7 +216,7 @@ void HandGestureInterpreter::execute_gesture_action(
   // Wait for the transition to complete
   while (transition_in_progress_ && rclcpp::ok() && !goal_handle->is_canceling()) {
     // Update feedback
-    feedback->percentage_complete = transition_progress_;
+    feedback->percentage_complete = static_cast<float>(transition_progress_);
     goal_handle->publish_feedback(feedback);
 
     // Sleep briefly to avoid busy-waiting
