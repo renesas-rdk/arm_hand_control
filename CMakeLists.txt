@@ -33,8 +33,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 # rosidl-generated C sources don't satisfy the workspace's strict warning policy
 # (cross.cmake sets -Wall -Wextra -Wconversion -Werror -pedantic-errors): float64
-# defaults emit as `long double` literals (lossy on aarch64), Py_ssize_t conversions,
-# and function-pointer-to-object-pointer casts all trip the policy.
+# defaults emit as `long double` literals, Py_ssize_t conversions, and Python C
+# API int return values assigned to int8_t all trip conversion diagnostics.
 foreach(_rosidl_target
     ${PROJECT_NAME}__rosidl_generator_c
     ${PROJECT_NAME}__rosidl_generator_py
@@ -43,9 +43,9 @@ foreach(_rosidl_target
     ${PROJECT_NAME}_s__rosidl_typesupport_fastrtps_c)
   if(TARGET ${_rosidl_target})
     target_compile_options(${_rosidl_target} PRIVATE
-      -Wno-error=conversion
-      -Wno-error=float-conversion
-      -Wno-error=sign-conversion
+      -Wno-conversion
+      -Wno-float-conversion
+      -Wno-sign-conversion
       -Wno-pedantic)
   endif()
 endforeach()
